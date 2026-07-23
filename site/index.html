@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- __FEED_HOST__, __USIGN_FPR__ and __APK_FPR__ are substituted by scripts/render-site.sh at
+     deploy time: the host from the FEED_HOST repository variable, the fingerprints derived from
+     keys/eamonxg.pub and keys/eamonxg.pem. Deriving them beats hardcoding, which would leave a
+     stale fingerprint behind on key rotation; a surviving placeholder fails the build. -->
 <title>EAMONXG FEED</title>
 <meta name="description" content="Signed third-party OpenWrt package feed for luci-theme-aurora, luci-theme-shadcn and luci-app-aurora-config. opkg and apk, snapshot and stable channels.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
