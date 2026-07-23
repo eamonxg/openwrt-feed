@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- __FEED_HOST__, __USIGN_FPR__ and __APK_FPR__ are substituted by scripts/render-site.sh at
-     deploy time: the host from the FEED_HOST repository variable, the fingerprints derived from
-     keys/eamonxg.pub and keys/eamonxg.pem. Deriving them beats hardcoding, which would leave a
-     stale fingerprint behind on key rotation; a surviving placeholder fails the build. -->
+     deploy time: the host from the FEED_HOST repository variable, the two key fingerprints
+     derived from keys/eamonxg.pub and keys/eamonxg.pem. A surviving placeholder fails the
+     build. Run scripts/preview.sh to view this file rendered rather than opening it directly. -->
 <title>EAMONXG FEED</title>
 <meta name="description" content="Signed third-party OpenWrt package feed for luci-theme-aurora, luci-theme-shadcn and luci-app-aurora-config. opkg and apk, snapshot and stable channels.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -244,16 +244,34 @@ footer {
 }
 footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; }
 .foot-key { margin-bottom: 3.3rem; }
+.foot-lead { max-width: 58ch; margin-bottom: .9rem; }
 .foot-auth {
-  display: grid; grid-template-columns: 3.4rem 1fr; gap: .3rem .9rem;
-  max-width: 52ch; margin-bottom: 1rem;
+  display: grid; grid-template-columns: 3.2rem 1fr; gap: .5rem .8rem;
+  margin-bottom: 1.2rem;
 }
 .foot-auth dt { color: var(--ink); font-weight: 600; }
 .foot-auth dd { margin: 0; }
 .foot-auth code { color: var(--ink); }
-.foot-meta { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; justify-content: space-between; align-items: baseline; }
+.foot-auth .fpr { display: block; margin-top: .15rem; color: var(--ink-3); }
+.foot-auth .fpr code { margin-left: .35rem; }
+.foot-auth a { text-decoration-color: var(--line-soft); }
+/* ann-w parks the note in the right margin; ann-n would push the following line down by a
+   whole label height, which is what the footer has least of */
+.foot-auth .ann-w { --ann-label-max-width: 10rem; --ann-text-x: -.4rem; }
+.foot-how { max-width: 62ch; margin-bottom: 1.1rem; }
+.foot-how summary { font-size: .72rem; color: var(--ink-2); }
+.foot-how > p { margin: .5rem 0 0; }
+.foot-how code { color: var(--ink); }
+.foot-how pre {
+  background: rgba(39,37,32,.05); border: 1px solid var(--line-soft); border-radius: 2px;
+  padding: .5rem .65rem; margin: .35rem 0 0; overflow-x: auto; font-size: .68rem; letter-spacing: 0;
+}
+.foot-meta {
+  display: flex; flex-wrap: wrap; gap: .8rem 1.2rem;
+  justify-content: space-between; align-items: center;
+}
 .colophon {
-  margin-top: 3.4rem; display: flex; justify-content: flex-end; align-items: center; gap: 1rem;
+  display: flex; align-items: center; gap: 1rem; margin-left: auto;
   font-size: .6rem; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
 }
 .node-stamp {
@@ -284,7 +302,6 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
   .pkg-table { font-size: .72rem; }
   .pkg-table td, .pkg-table th { padding-left: .35rem; padding-right: .35rem; }
   .foot-key { margin-bottom: .8rem; }
-  .colophon { margin-top: 2.4rem; }
   .node-stamp { width: 120px; }
 }
 </style>
@@ -452,30 +469,56 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
   </section>
 
   <footer>
-    <p class="foot-key">
-      <span class="en">signing key fingerprint</span><span class="zh">签名公钥指纹</span>
-      <code class="ann ann-n" data-note="if it doesn't match, don't install"
-            data-note-en="if it doesn't match, don't install" data-note-zh="对不上就别装">__APK_FPR__</code>
+    <p class="foot-lead">
+      <span class="en">Packages and indexes here are signed. Installing the feed writes the public
+        key into the device's trust directory, and every later update or install is verified
+        against it — anything that fails is refused, with nothing further for you to do.</span>
+      <span class="zh">本源的包与索引均已签名。装源时公钥被写入设备的信任目录，此后每次 update / add
+        都会自动验签，未通过即拒装——你不需要任何额外操作。</span>
     </p>
     <dl class="foot-auth">
       <dt>apk</dt>
-      <dd><span class="en">every package and the index carries its own EC signature, checked on
-        each update and install against <code>/etc/apk/keys/</code></span>
-        <span class="zh">每个包与索引各自携带 EC 签名，每次 update / add 都用
-        <code>/etc/apk/keys/</code> 内的公钥验签，验不过即拒装</span></dd>
+      <dd><code>/etc/apk/keys/</code><a href="eamonxg.pem"><code
+          class="ann ann-w" data-note="EC key, checks every package"
+          data-note-en="EC key, checks every package"
+          data-note-zh="EC 公钥，验每个包">eamonxg.pem</code></a>
+        <span class="fpr"><span class="en">fingerprint</span><span class="zh">指纹</span>
+          <code>__APK_FPR__</code></span></dd>
       <dt>opkg</dt>
-      <dd><span class="en">usign signs the index; packages are bound to it by SHA-256, and the
-        key file must be named after its fingerprint</span>
-        <span class="zh">usign 签的是索引，包由索引内的 SHA-256 绑定；公钥文件名必须等于其指纹</span></dd>
+      <dd><code>/etc/opkg/keys/</code><a href="eamonxg.pub"><code
+          class="ann ann-w" data-note="usign key, checks the index"
+          data-note-en="usign key, checks the index"
+          data-note-zh="usign 公钥，验索引">__USIGN_FPR__</code></a>
+        <span class="fpr"><span class="en">opkg looks the key up by filename, so the name above is
+          the fingerprint</span><span class="zh">opkg 按文件名查找公钥，所以上面这个名字就是它的指纹</span></span></dd>
     </dl>
+    <details class="foot-how">
+      <summary><span class="en">How do I confirm the key is ours?</span><span
+        class="zh">怎么确认这把公钥是本源的？</span></summary>
+      <p><span class="en"><strong>apk</strong> — take the fingerprint of the
+        <code>eamonxg.pem</code> you received; it must equal the one above.</span>
+        <span class="zh"><strong>apk</strong> —— 对收到的 <code>eamonxg.pem</code>
+        求一次指纹，结果必须与上面那串完全一致。</span></p>
+      <pre><code>openssl pkey -pubin -in eamonxg.pem -outform DER | openssl dgst -sha256 -binary | openssl base64</code></pre>
+      <p class="hint"><span class="en">Routers ship without openssl — install it with
+        <code>apk add openssl-util</code>.</span>
+        <span class="zh">路由器默认不带 openssl，先装上：<code>apk add openssl-util</code>。</span></p>
+      <p><span class="en"><strong>opkg</strong> — no command needed: the filename in
+        <code>/etc/opkg/keys/</code> is the fingerprint, so read it and compare.</span>
+        <span class="zh"><strong>opkg</strong> —— 不需要命令：<code>/etc/opkg/keys/</code>
+        下的文件名就是指纹，看一眼是否与上面一致即可。</span></p>
+      <p><span class="en">Both keys are committed to the repository below, so comparing your copy
+        against that one works too.</span><span class="zh">两把公钥也都收录在下方仓库里，
+        把设备上的文件与仓库副本直接比对同样可行。</span></p>
+    </details>
     <p class="foot-meta">
       <a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a>
+      <span class="colophon">
+        <span class="en">rev 2026.07</span><span class="zh">版次 2026.07</span>
+        <img class="node-stamp" src="assets/violet-node.png" alt="">
+      </span>
     </p>
   </footer>
-  <div class="colophon">
-    <span><span class="en">rev 2026.07</span><span class="zh">版次 2026.07</span></span>
-    <img class="node-stamp" src="assets/violet-node.png" alt="">
-  </div>
 
 </main>
 

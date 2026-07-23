@@ -17,7 +17,7 @@ for a in neat-annotations.css geist-mono-variable.woff2 shantell-sans-500.woff2 
 done
 grep -q "feed.example.test" "$tmp/dist/install.sh" || { echo "host not substituted"; exit 1; }
 grep -q "0b26f36ae0f4106d" "$tmp/dist/install.sh" || { echo "fpr not substituted"; exit 1; }
-# the apk fingerprint contains / and + — it must survive sed unmangled
+# the apk fingerprint is base64 — its / and + must survive sed unmangled
 grep -qF "SHA256:Zm9vYmFyKw==" "$tmp/dist/index.html" || { echo "apk fpr not substituted"; exit 1; }
 # package list derived from manifest: unique main packages, i18n excluded, sorted
 grep -q "luci-theme-aurora luci-theme-shadcn" "$tmp/dist/install.sh" || { echo "package list not injected"; exit 1; }

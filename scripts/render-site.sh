@@ -4,7 +4,7 @@
 # __PACKAGES__ is derived from dist/manifest.json (main packages, i18n excluded) —
 # run gen-manifest.sh first.
 set -euo pipefail
-site=$1 dist=$2 host=$3 fpr=$4 apk_fpr=${5:-}
+site=$1 dist=$2 host=$3 fpr=$4 apk_fpr=$5
 [ -f "$dist/manifest.json" ] || { echo "ERROR: $dist/manifest.json missing — run gen-manifest.sh before render-site.sh" >&2; exit 1; }
 pkgs=$(jq -r '[.channels[] | .[] | .[].pkg]
   | unique | map(select(startswith("luci-i18n-") | not)) | join(" ")' "$dist/manifest.json")
