@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eamonxg OpenWrt Feed</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font: 16px/1.7 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 52rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem;
+  }
+  html[lang="en"] .zh { display: none; }
+  html[lang="zh"] .en { display: none; }
+  .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  .lang-toggle {
+    flex: none; font: inherit; font-size: .85rem; cursor: pointer;
+    padding: .3rem .8rem; border-radius: 8px; border: 1px solid rgba(127,127,127,.35);
+    background: transparent; color: inherit;
+  }
+  .lang-toggle:hover { background: rgba(127,127,127,.12); }
+  .tagline { opacity: .7; margin: 0 0 1rem; }
+  .badges { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.5rem; }
+  .badge {
+    font-size: .78rem; padding: .15rem .6rem; border-radius: 999px;
+    background: rgba(127,127,127,.14); white-space: nowrap;
+  }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 1rem; padding: .6rem 0;
+    border-top: 1px solid rgba(127,127,127,.25); border-bottom: 1px solid rgba(127,127,127,.25);
+    font-size: .92rem; }
+  nav.toc a { text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 .75rem; padding-bottom: .35rem;
+    border-bottom: 2px solid rgba(127,127,127,.25); }
+  h3 { font-size: 1.02rem; margin: 1.5rem 0 .5rem; }
+  pre {
+    background: rgba(127,127,127,.12); padding: .8rem 1rem; border-radius: 10px;
+    overflow-x: auto; margin: .5rem 0; line-height: 1.55;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em; }
+  .chip { display: inline-block; font-size: .78rem; font-weight: 600;
+    padding: .05rem .55rem; border-radius: 6px; margin-right: .4rem; vertical-align: 1px; }
+  .chip.snap { background: rgba(210,153, 34,.20); color: #b8860b; }
+  .chip.rel  { background: rgba( 46,160, 67,.18); color: #2ea043; }
+  @media (prefers-color-scheme: dark) {
+    .chip.snap { color: #e3b341; }
+    .chip.rel  { color: #4ecb71; }
+  }
+  .hint { opacity: .68; font-size: .88rem; margin: .25rem 0 0; }
+  table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; font-size: .92rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid rgba(127,127,127,.2); }
+  th { font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; opacity: .65; }
+  td code { font-size: .85em; }
+  details { margin: .25rem 0 1rem; }
+  details summary { cursor: pointer; opacity: .75; font-size: .92rem; padding: .25rem 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(127,127,127,.25);
+    font-size: .85rem; opacity: .7; }
+  footer code { font-size: .95em; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>eamonxg OpenWrt Feed</h1>
+    <p class="tagline">
+      <span class="en">Third-party package feed for luci-theme-aurora · luci-theme-shadcn · luci-app-aurora-config</span>
+      <span class="zh">luci-theme-aurora · luci-theme-shadcn · luci-app-aurora-config 的第三方软件源</span>
+    </p>
+  </div>
+  <button class="lang-toggle" id="langToggle" type="button">中文</button>
+</div>
+
+<div class="badges">
+  <span class="badge"><span class="en">all-arch — works on every device</span><span class="zh">all 架构，全设备通用</span></span>
+  <span class="badge"><span class="en">usign / apk signed</span><span class="zh">usign / apk 双签名</span></span>
+  <span class="badge">opkg（≤ 24.10）· apk（≥ 25.12）</span>
+  <span class="badge"><span class="en">snapshot &amp; stable channels</span><span class="zh">快照 / 稳定双通道</span></span>
+</div>
+
+<nav class="toc">
+  <a href="#quick"><span class="en">Quick install</span><span class="zh">一键安装</span></a>
+  <a href="#manual"><span class="en">Manual setup</span><span class="zh">手动安装</span></a>
+  <a href="#versions"><span class="en">Packages</span><span class="zh">版本表</span></a>
+</nav>
+
+<h2 id="quick"><span class="en">Quick install</span><span class="zh">一键安装</span></h2>
+<p>
+  <span class="en">The script detects opkg / apk, imports the signing key and adds the feed.</span>
+  <span class="zh">脚本自动识别 opkg / apk，导入公钥并添加源。</span>
+</p>
+
+<h3><span class="chip snap"><span class="en">Snapshot</span><span class="zh">快照版</span></span>
+  <span class="en">snapshots — daily builds from the development branch (default)</span>
+  <span class="zh">snapshots —— 跟随开发分支每日构建（默认）</span></h3>
+<pre><code>wget -qO- https://__FEED_HOST__/install.sh | sh</code></pre>
+
+<h3><span class="chip rel"><span class="en">Stable</span><span class="zh">稳定版</span></span>
+  <span class="en">releases — latest tagged releases, updates only when a release is cut</span>
+  <span class="zh">releases —— 各包最新发布 tag，仅发版时更新</span></h3>
+<pre><code>wget -qO- https://__FEED_HOST__/install.sh | CHANNEL=releases sh</code></pre>
+<p class="hint">
+  <span class="en">Snapshots carry the newest unreleased changes and may occasionally break.
+    Both channels share one feed name — pick exactly one.</span>
+  <span class="zh">快照版包含未发布的最新改动，偶尔可能不稳定；两个通道源名相同，只能二选一。</span>
+</p>
+
+<h2 id="manual"><span class="en">Manual setup</span><span class="zh">手动安装</span></h2>
+<p>
+  <span class="en">Three steps: import the signing key → add <strong>one</strong> of the two feeds
+    (they share the same name) → update the package index.</span>
+  <span class="zh">三步：导入公钥 → 添加源（快照 / 稳定<strong>二选一</strong>，源名相同不可同时添加）→ 更新索引。</span>
+</p>
+
+<h3>opkg（OpenWrt ≤ 24.10）</h3>
+<pre class="en"><code># 1. Import the signing key (the file name MUST be the key fingerprint)
+wget -qO /etc/opkg/keys/__USIGN_FPR__ https://__FEED_HOST__/eamonxg.pub
+
+# 2a. Add the snapshot feed (default)
+echo "src/gz eamonxg https://__FEED_HOST__/snapshots/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
+# 2b. Or: add the stable feed
+echo "src/gz eamonxg https://__FEED_HOST__/releases/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
+
+# 3. Update the index, then install any feed package (example below)
+opkg update
+opkg install luci-theme-aurora</code></pre>
+<pre class="zh"><code># 1. 导入公钥（文件名必须是密钥指纹）
+wget -qO /etc/opkg/keys/__USIGN_FPR__ https://__FEED_HOST__/eamonxg.pub
+
+# 2a. 添加快照版源（默认）
+echo "src/gz eamonxg https://__FEED_HOST__/snapshots/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
+# 2b. 或：添加稳定版源
+echo "src/gz eamonxg https://__FEED_HOST__/releases/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
+
+# 3. 更新索引后安装任意包（下为示例）
+opkg update
+opkg install luci-theme-aurora</code></pre>
+
+<h3>apk（OpenWrt ≥ 25.12）</h3>
+<pre class="en"><code># 1. Import the signing key
+wget -qO /etc/apk/keys/eamonxg.pem https://__FEED_HOST__/eamonxg.pem
+
+# 2a. Add the snapshot feed (default)
+echo "https://__FEED_HOST__/snapshots/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
+# 2b. Or: add the stable feed
+echo "https://__FEED_HOST__/releases/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
+
+# 3. Update the index, then install any feed package (example below)
+apk update
+apk add luci-theme-aurora</code></pre>
+<pre class="zh"><code># 1. 导入公钥
+wget -qO /etc/apk/keys/eamonxg.pem https://__FEED_HOST__/eamonxg.pem
+
+# 2a. 添加快照版源（默认）
+echo "https://__FEED_HOST__/snapshots/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
+# 2b. 或：添加稳定版源
+echo "https://__FEED_HOST__/releases/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
+
+# 3. 更新索引后安装任意包（下为示例）
+apk update
+apk add luci-theme-aurora</code></pre>
+
+<h2 id="versions"><span class="en">Packages</span><span class="zh">版本表</span></h2>
+<div id="tables"><p class="hint">
+  <span class="en">Loading manifest.json…</span><span class="zh">加载 manifest.json…</span>
+</p></div>
+
+<footer>
+  <span class="en">usign key fingerprint</span><span class="zh">usign 公钥指纹</span>
+  <code>__USIGN_FPR__</code> ·
+  <a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a>
+  <span id="gen"></span>
+</footer>
+
+<script>
+const STR = {
+  en: {
+    channels: {
+      snapshots: { label: 'Snapshot · snapshots', chip: 'snap', desc: 'default branch HEAD, built daily (default channel)' },
+      releases:  { label: 'Stable · releases',    chip: 'rel',  desc: 'last 2 tagged releases of each package' },
+    },
+    fmt: { opkg: 'opkg (.ipk)', apk: 'apk (.apk)' },
+    th: ['Package', 'Version', 'Size', 'Download'],
+    dl: 'download', i18nGroup: n => `Language packs luci-i18n-* (${n})`,
+    gen: t => ` · generated ${t}`, loadFail: 'Failed to load manifest.json',
+  },
+  zh: {
+    channels: {
+      snapshots: { label: '快照版 snapshots', chip: 'snap', desc: '默认分支 HEAD，每日构建（默认通道）' },
+      releases:  { label: '稳定版 releases',  chip: 'rel',  desc: '各包最近 2 个发布 tag' },
+    },
+    fmt: { opkg: 'opkg（.ipk）', apk: 'apk（.apk）' },
+    th: ['包', '版本', '大小', '下载'],
+    dl: '下载', i18nGroup: n => `语言包 luci-i18n-*（${n} 个）`,
+    gen: t => ` · 生成于 ${t}`, loadFail: 'manifest.json 加载失败',
+  },
+};
+let lang = localStorage.getItem('feedLang') === 'zh' ? 'zh' : 'en';
+let manifest = null;
+
+const fmtSize = n => n > 1048576 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(0)+' KB';
+
+function renderTable(items, channel, fmt, s) {
+  const t = document.createElement('table');
+  t.innerHTML = `<tr>${s.th.map(h => `<th>${h}</th>`).join('')}</tr>`;
+  for (const it of items) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><code>${it.pkg}</code></td><td>${it.version}</td>` +
+      `<td>${fmtSize(it.size)}</td><td><a href="${channel}/${fmt}/${it.file}">${s.dl}</a></td>`;
+    t.appendChild(tr);
+  }
+  return t;
+}
+
+function renderTables() {
+  if (!manifest) return;
+  const s = STR[lang];
+  const root = document.getElementById('tables');
+  root.innerHTML = '';
+  for (const [channel, meta] of Object.entries(s.channels)) {
+    const fmts = manifest.channels[channel] || {};
+    const h = document.createElement('h3');
+    h.innerHTML = `<span class="chip ${meta.chip}">${meta.label}</span><span class="hint">${meta.desc}</span>`;
+    root.append(h);
+    for (const [fmt, items] of Object.entries(fmts)) {
+      if (!items.length) continue;
+      const main = items.filter(it => !it.pkg.startsWith('luci-i18n-'));
+      const i18n = items.filter(it => it.pkg.startsWith('luci-i18n-'));
+      const sub = document.createElement('p');
+      sub.className = 'hint'; sub.textContent = s.fmt[fmt] || fmt;
+      root.append(sub, renderTable(main, channel, fmt, s));
+      if (i18n.length) {
+        const d = document.createElement('details');
+        const sm = document.createElement('summary');
+        sm.textContent = s.i18nGroup(i18n.length);
+        d.append(sm, renderTable(i18n, channel, fmt, s));
+        root.append(d);
+      }
+    }
+  }
+  document.getElementById('gen').textContent = s.gen(manifest.generated);
+}
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.getElementById('langToggle').textContent = lang === 'en' ? '中文' : 'EN';
+  renderTables();
+}
+
+document.getElementById('langToggle').addEventListener('click', () => {
+  lang = lang === 'en' ? 'zh' : 'en';
+  localStorage.setItem('feedLang', lang);
+  applyLang();
+});
+
+applyLang();
+fetch('manifest.json').then(r => r.json()).then(m => { manifest = m; renderTables(); })
+  .catch(() => {
+    const s = STR[lang];
+    document.getElementById('tables').innerHTML = `<p class="hint">${s.loadFail}</p>`;
+  });
+</script>
+</body>
+</html>

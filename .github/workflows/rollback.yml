@@ -1,0 +1,21 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: feed-pipeline
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+      - name: Render wrangler config
+        run: sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" wrangler.template.jsonc > wrangler.jsonc
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.113.0"
+          command: rollback --message "manual rollback drill" --yes --config wrangler.jsonc

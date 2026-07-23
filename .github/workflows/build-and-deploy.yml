@@ -1,0 +1,154 @@
+name: Build and Deploy Feed
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full = rebuild all channels; snapshots = snapshots only (cron path)"
+        type: choice
+        options: [full, snapshots]
+        default: full
+  repository_dispatch:
+    types: [package-released]
+  schedule:
+    - cron: "25 19 * * *"   # daily 19:25 UTC = 03:25 Asia/Shanghai — snapshots only:
+                            # apk packages are not byte-reproducible (embedded per-package
+                            # signature), so unchanged releases must not be re-deployed
+
+env:
+  SDK_OPKG: "24.10.7"
+  SDK_APK: "25.12.5"
+
+concurrency:
+  group: feed-pipeline
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      cells: ${{ steps.m.outputs.cells }}
+    steps:
+      - id: m
+        run: |
+          full='[{"channel":"releases","fmt":"opkg","pkg_type":"ipk"},{"channel":"releases","fmt":"apk","pkg_type":"apk"},{"channel":"snapshots","fmt":"opkg","pkg_type":"ipk"},{"channel":"snapshots","fmt":"apk","pkg_type":"apk"}]'
+          snaps='[{"channel":"snapshots","fmt":"opkg","pkg_type":"ipk"},{"channel":"snapshots","fmt":"apk","pkg_type":"apk"}]'
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.mode }}" = "snapshots" ]; then
+            echo "cells=$snaps" >> "$GITHUB_OUTPUT"
+          else
+            echo "cells=$full" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: ${{ matrix.channel }}-${{ matrix.fmt }}
+    runs-on: ubuntu-latest
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.cells) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve refs
+        id: refs
+        run: |
+          list=$(scripts/resolve-refs.sh packages.json "${{ matrix.channel }}")
+          echo "resolved: $list"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+
+      - uses: eamonxg/build-luci-package/feed@master
+        env:
+          USIGN_KEY: ${{ secrets.USIGN_PRIVATE_KEY }}
+          APK_KEY: ${{ secrets.APK_PRIVATE_KEY }}
+        with:
+          pkg_type: ${{ matrix.pkg_type }}
+          sdk_version: ${{ matrix.pkg_type == 'ipk' && env.SDK_OPKG || env.SDK_APK }}
+          build_list: ${{ steps.refs.outputs.list }}
+          out_dir: dist/${{ matrix.channel }}/${{ matrix.fmt }}
+          usign_pub: ${{ matrix.pkg_type == 'ipk' && 'keys/eamonxg.pub' || '' }}
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: feed-${{ matrix.channel }}-${{ matrix.fmt }}
+          path: dist/
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: feed-*
+          merge-multiple: true
+
+      - name: Carry forward channels not rebuilt this run
+        run: |
+          set -euo pipefail
+          host="${{ vars.FEED_HOST }}"
+          for cf in "releases opkg" "releases apk" "snapshots opkg" "snapshots apk"; do
+            set -- $cf; ch=$1; fmt=$2
+            [ -d "dist/$ch/$fmt" ] && continue
+            echo "carrying forward $ch/$fmt from live site (byte-stable, index-consistent)"
+            mkdir -p "dist/$ch/$fmt"
+            curl -fsS "https://$host/manifest.json" -o /tmp/live-manifest.json
+            jq -r --arg c "$ch" --arg f "$fmt" '.channels[$c][$f][].file' /tmp/live-manifest.json \
+              | while read -r file; do
+                  curl -fsS "https://$host/$ch/$fmt/$file" -o "dist/$ch/$fmt/$file"
+                done
+            if [ "$fmt" = opkg ]; then
+              sidecars="Packages Packages.gz Packages.sig Packages.manifest Packages.bom.cdx.json index.json"
+            else
+              sidecars="packages.adb index.json"
+            fi
+            for s in $sidecars; do
+              curl -fsS "https://$host/$ch/$fmt/$s" -o "dist/$ch/$fmt/$s" || echo "warn: no live $ch/$fmt/$s"
+            done
+          done
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          cp keys/eamonxg.pub keys/eamonxg.pem dist/
+          FPR=$(scripts/usign-fpr.sh keys/eamonxg.pub)
+          scripts/gen-manifest.sh dist
+          scripts/render-site.sh site dist "${{ vars.FEED_HOST }}" "$FPR"
+          sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" wrangler.template.jsonc > wrangler.jsonc
+          echo "== dist =="; find dist -type f | sort
+
+      - name: Verify manifest against dist (spec §12.6)
+        run: |
+          set -euo pipefail
+          jq -r '.channels[] | .[] | .[] | .file' dist/manifest.json | sort > /tmp/manifest-files
+          while read -r f; do
+            found=$(find dist -name "$f" | head -n1)
+            [ -n "$found" ] || { echo "manifest lists missing file: $f"; exit 1; }
+          done < /tmp/manifest-files
+          echo "manifest OK ($(wc -l < /tmp/manifest-files) files)"
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # wrangler-action's default pin (3.90.0) predates _headers support for
+          # Workers static assets — it uploads _headers as a plain asset
+          wranglerVersion: "4.113.0"
+          command: deploy --config wrangler.jsonc
+
+      - name: Post-deploy smoke
+        run: |
+          set -euo pipefail
+          host="${{ vars.FEED_HOST }}"
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$host/releases/opkg/Packages.gz" || true)
+            [ "$code" = 200 ] && break
+            echo "attempt $i: HTTP $code — waiting 30s (domain/cert propagation)"; sleep 30
+          done
+          curl -sI "https://$host/releases/opkg/Packages.gz" | tee /tmp/h
+          grep -qi '^content-type: application/octet-stream' /tmp/h
+          ! grep -qi '^content-encoding:' /tmp/h
+          echo "headers OK"
