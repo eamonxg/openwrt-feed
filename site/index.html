@@ -240,14 +240,13 @@ footer {
 }
 footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; }
 .foot-key { margin-bottom: 3.3rem; }
-.foot-why { max-width: 44ch; margin-bottom: .7rem; }
-.foot-why code { color: var(--ink); }
-.foot-how { margin: 0 0 1rem; }
-.foot-how summary { font-size: .72rem; }
-.foot-how pre {
-  background: rgba(39,37,32,.05); border: 1px solid var(--line-soft); border-radius: 2px;
-  padding: .55rem .7rem; margin: .4rem 0 0; overflow-x: auto; font-size: .68rem; letter-spacing: 0;
+.foot-auth {
+  display: grid; grid-template-columns: 3.4rem 1fr; gap: .3rem .9rem;
+  max-width: 52ch; margin-bottom: 1rem;
 }
+.foot-auth dt { color: var(--ink); font-weight: 600; }
+.foot-auth dd { margin: 0; }
+.foot-auth code { color: var(--ink); }
 .foot-meta { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; justify-content: space-between; align-items: baseline; }
 .colophon {
   margin-top: 3.4rem; display: flex; justify-content: flex-end; align-items: center; gap: 1rem;
@@ -454,24 +453,17 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
       <code class="ann ann-n" data-note="if it doesn't match, don't install"
             data-note-en="if it doesn't match, don't install" data-note-zh="对不上就别装">__APK_FPR__</code>
     </p>
-    <p class="foot-why">
-      <span class="en">Every package here is signed with one key, and installing the feed fetches
-        its public half as <code>eamonxg.pem</code>. The copy you receive should match the
-        fingerprint above; if it does not, it did not come from this feed.</span>
-      <span class="zh">本源的每个包都由同一把密钥签名，装源时会下载它的公钥
-        <code>eamonxg.pem</code>。你拿到的那份应该和上面这串指纹对得上——对不上，就说明它不是从本源来的。</span>
-    </p>
-    <details class="foot-how">
-      <summary><span class="en">How do I check?</span><span class="zh">怎么核对？</span></summary>
-      <p class="hint">
-        <span class="en">Run this against the pem you downloaded (needs openssl; easiest on a
-          computer, on the router install <code>openssl-util</code> first). The output should be
-          the fingerprint above, character for character.</span>
-        <span class="zh">对下载到的 pem 执行下面这条命令（需要 openssl，在电脑上最方便；路由器上要先装
-          <code>openssl-util</code>）。输出应与上面那串指纹一字不差。</span>
-      </p>
-      <pre><code>openssl pkey -pubin -in eamonxg.pem -outform DER | openssl dgst -sha256 -binary | openssl base64</code></pre>
-    </details>
+    <dl class="foot-auth">
+      <dt>apk</dt>
+      <dd><span class="en">every package and the index carries its own EC signature, checked on
+        each update and install against <code>/etc/apk/keys/</code></span>
+        <span class="zh">每个包与索引各自携带 EC 签名，每次 update / add 都用
+        <code>/etc/apk/keys/</code> 内的公钥验签，验不过即拒装</span></dd>
+      <dt>opkg</dt>
+      <dd><span class="en">usign signs the index; packages are bound to it by SHA-256, and the
+        key file must be named after its fingerprint</span>
+        <span class="zh">usign 签的是索引，包由索引内的 SHA-256 绑定；公钥文件名必须等于其指纹</span></dd>
+    </dl>
     <p class="foot-meta">
       <a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a>
     </p>
