@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <!-- __FEED_HOST__, __USIGN_FPR__ and __APK_FPR__ are substituted by scripts/render-site.sh at
      deploy time: the host from the FEED_HOST repository variable, the two key fingerprints
      derived from keys/eamonxg.pub and keys/eamonxg.pem. A surviving placeholder fails the
@@ -57,6 +57,13 @@ html[lang="en"] .zh { display: none; }
 html[lang="zh"] .en { display: none; }
 
 /* ── torn paper sheet ─────────────────────────────── */
+/* The tear is four narrow filtered strips rather than one filtered page-tall box.
+   WebKit refuses to allocate a filter buffer larger than 4096² device px
+   (ImageBuffer::sizeNeedsClamping) and silently leaves the whole layer unpainted;
+   a full-height sheet blows past that on a DPR-3 phone, which is why the paper
+   vanished on iOS while the small sticker kept its rough edge. That check only
+   looks at area, never at length, so a 22px-wide strip stays safe no matter how
+   long the feed listing grows. Everything the filters touch is perimeter anyway. */
 .sheet {
   position: relative;
   max-width: 700px;
@@ -64,9 +71,12 @@ html[lang="zh"] .en { display: none; }
   padding: 2.2rem 2.5rem 2rem;
   isolation: isolate;
 }
-.sheet::before, .sheet::after {
+/* Paper body. Straight-edged and inset far enough that the strips, at their
+   deepest inward displacement, still cover its edges. */
+.sheet::before {
   content: "";
   position: absolute;
+  inset: 14px 4px;
   z-index: -1;
   background-color: var(--paper);
   background-image:
@@ -74,17 +84,38 @@ html[lang="zh"] .en { display: none; }
     url(assets/paper-texture.jpg);
   background-size: auto, 620px;
 }
-.sheet::before {
-  inset: -4px -6px;
-  filter: url(#torn) drop-shadow(0 18px 32px rgba(32,29,22,.30)) drop-shadow(0 4px 8px rgba(32,29,22,.18));
+.torn { position: absolute; inset: 0; z-index: -2; pointer-events: none; }
+/* The shadow rides a plain rect between the two paper layers: at 32px of blur
+   there is nothing to gain from making it trace the tear. */
+.torn::before {
+  content: "";
+  position: absolute;
+  inset: -2px -4px;
+  z-index: 2;
+  box-shadow: 0 18px 32px rgba(32,29,22,.30), 0 4px 8px rgba(32,29,22,.18);
 }
-.sheet::after {
-  inset: -11px -13px;
-  background-color: var(--paper-hi);
-  filter: url(#fray);
-  z-index: -2;
-  opacity: .9;
+.torn i { position: absolute; inset: 0; }
+.torn i::before, .torn i::after {
+  content: "";
+  position: absolute;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(rgba(226,223,214,.62), rgba(226,223,214,.62)),
+    url(assets/paper-texture.jpg);
+  background-size: auto, 620px;
 }
+/* fray: the lighter sheet showing behind, displaced up to 11px */
+.torn i::before { z-index: 1; background-color: var(--paper-hi); opacity: .9; filter: url(#fray); }
+/* torn: the sheet itself, displaced up to 7.5px */
+.torn i::after { z-index: 3; filter: url(#torn); }
+.torn .e-l::before { inset: -11px auto -11px -13px; width: 32px; }
+.torn .e-r::before { inset: -11px -13px -11px auto; width: 32px; }
+.torn .e-t::before { inset: -11px -13px auto; height: 34px; }
+.torn .e-b::before { inset: auto -13px -11px; height: 34px; }
+.torn .e-l::after { inset: -4px auto -4px -6px; width: 22px; }
+.torn .e-r::after { inset: -4px -6px -4px auto; width: 22px; }
+.torn .e-t::after { inset: -4px -6px auto; height: 30px; }
+.torn .e-b::after { inset: auto -6px -4px; height: 30px; }
 
 /* ── masthead ─────────────────────────────────────── */
 .masthead {
@@ -310,11 +341,14 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <filter id="torn" x="-5%" y="-5%" width="110%" height="110%">
+    <!-- The region is a percentage of the filtered box, and these two run on the 22/32px
+         edge strips, so it has to be wide enough there to hold a half-scale displacement
+         (7.5px and 11px) instead of clipping the tear back to a straight line. -->
+    <filter id="torn" x="-45%" y="-45%" width="190%" height="190%">
       <feTurbulence type="fractalNoise" baseFrequency="0.013 0.021" numOctaves="4" seed="7" result="n"/>
       <feDisplacementMap in="SourceGraphic" in2="n" scale="15"/>
     </filter>
-    <filter id="fray" x="-6%" y="-6%" width="112%" height="112%">
+    <filter id="fray" x="-45%" y="-45%" width="190%" height="190%">
       <feTurbulence type="fractalNoise" baseFrequency="0.024 0.04" numOctaves="5" seed="3" result="n"/>
       <feDisplacementMap in="SourceGraphic" in2="n" scale="22"/>
     </filter>
@@ -326,6 +360,9 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
 </svg>
 
 <main class="sheet">
+
+  <!-- the four torn edges; caps come last so they overlap the side strips at the corners -->
+  <div class="torn" aria-hidden="true"><i class="e-l"></i><i class="e-r"></i><i class="e-t"></i><i class="e-b"></i></div>
 
   <div class="masthead">
     <h1>OpenWrt <small>/ eamonxg feed</small></h1>
