@@ -451,7 +451,6 @@ footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; 
     <p class="foot-verify"><code>openssl pkey -pubin -in eamonxg.pem -outform DER | openssl dgst -sha256 -binary | openssl base64</code></p>
     <p class="foot-meta">
       <a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a>
-      <span id="gen"></span>
     </p>
   </footer>
   <div class="colophon">
@@ -471,7 +470,7 @@ const STR = {
     fmt: { opkg: 'opkg (.ipk)', apk: 'apk (.apk)' },
     th: ['Package', 'Version', 'Size', ''],
     dl: 'download', i18nGroup: n => `Language packs luci-i18n-* (${n})`,
-    gen: t => ` · page generated ${t}`, loadFail: 'Failed to load manifest.json', toggle: '中文',
+    loadFail: 'Failed to load manifest.json', toggle: '中文',
     builtLabel: 'built', locale: 'en', wrapAgo: t => `(${t})`,
     copy: 'copy', copied: 'ok',
   },
@@ -483,7 +482,7 @@ const STR = {
     fmt: { opkg: 'opkg（.ipk）', apk: 'apk（.apk）' },
     th: ['包', '版本', '大小', ''],
     dl: '下载', i18nGroup: n => `语言包 luci-i18n-*（${n} 个）`,
-    gen: t => ` · 本页生成于 ${t}`, loadFail: 'manifest.json 加载失败', toggle: 'EN',
+    loadFail: 'manifest.json 加载失败', toggle: 'EN',
     builtLabel: '构建于', locale: 'zh-CN', wrapAgo: t => `（${t}）`,
     copy: '复制', copied: '已复制',
   },
@@ -557,7 +556,6 @@ function renderTables() {
       }
     }
   }
-  document.getElementById('gen').textContent = s.gen(fmtStamp(manifest.generated));
 }
 
 function applyLang() {
