@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
+        # Site-only changes (site/index.html, site/assets/**) belong in mode=snapshots, not
+        # full: every deploy re-renders the whole site anyway, while full would rebuild the
+        # releases channel too — and apk packages are not byte-reproducible, so that rewrites
+        # every .apk and devices holding the current index hit checksum mismatches until they
+        # update again. mode=snapshots carries releases forward from the live site verbatim.
         description: "full = rebuild all channels; snapshots = snapshots only (cron path)"
         type: choice
         options: [full, snapshots]
