@@ -10,6 +10,8 @@ pkgs=$(jq -r '[.channels[] | .[] | .[].pkg]
   | unique | map(select(startswith("luci-i18n-") | not)) | join(" ")' "$dist/manifest.json")
 [ -n "$pkgs" ] || { echo "ERROR: no packages found in manifest.json" >&2; exit 1; }
 cp "$site"/index.html "$site"/install.sh "$site"/_headers "$dist/"
+mkdir -p "$dist/assets"
+cp "$site"/assets/* "$dist/assets/"
 for f in "$dist/index.html" "$dist/install.sh"; do
   sed -i.bak \
     -e "s/__FEED_HOST__/$host/g" \
