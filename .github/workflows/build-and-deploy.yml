@@ -94,10 +94,12 @@ jobs:
         run: |
           set -euo pipefail
           host="${{ vars.FEED_HOST }}"
+          : > /tmp/carried.txt
           for cf in "releases opkg" "releases apk" "snapshots opkg" "snapshots apk"; do
             set -- $cf; ch=$1; fmt=$2
             [ -d "dist/$ch/$fmt" ] && continue
             echo "carrying forward $ch/$fmt from live site (byte-stable, index-consistent)"
+            echo "$ch/$fmt" >> /tmp/carried.txt
             mkdir -p "dist/$ch/$fmt"
             curl -fsS "https://$host/manifest.json" -o /tmp/live-manifest.json
             jq -r --arg c "$ch" --arg f "$fmt" '.channels[$c][$f][].file' /tmp/live-manifest.json \
@@ -119,8 +121,10 @@ jobs:
           set -euo pipefail
           cp keys/eamonxg.pub keys/eamonxg.pem dist/
           FPR=$(scripts/usign-fpr.sh keys/eamonxg.pub)
-          scripts/gen-manifest.sh dist
-          scripts/render-site.sh site dist "${{ vars.FEED_HOST }}" "$FPR"
+          APK_FPR="SHA256:$(openssl pkey -pubin -in keys/eamonxg.pem -outform DER \
+            | openssl dgst -sha256 -binary | openssl base64)"
+          scripts/gen-manifest.sh dist /tmp/carried.txt /tmp/live-manifest.json
+          scripts/render-site.sh site dist "${{ vars.FEED_HOST }}" "$FPR" "$APK_FPR"
           sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" wrangler.template.jsonc > wrangler.jsonc
           echo "== dist =="; find dist -type f | sort
 

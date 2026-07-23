@@ -32,3 +32,25 @@ z=$(jq -c '.channels.releases.apk[] | select(.file=="luci-i18n-aurora-config-zh-
 [ "$(jq -r .version <<<"$z")" = "26.192.49224~6b21ba7" ] || { echo "tilde apk version parse: $z"; exit 1; }
 [ "$(jq -r '.channels.snapshots.opkg | length' "$m")" = "0" ] || { echo "empty channel"; exit 1; }
 jq -e '.generated' "$m" >/dev/null || { echo "generated missing"; exit 1; }
+
+# with no carry-forward info every channel is stamped with this run's time
+[ "$(jq -r '.built.releases.opkg' "$m")" = "$(jq -r '.generated' "$m")" ] || { echo "built defaults to now"; exit 1; }
+
+# carried-forward channels keep the stamp from the manifest their files came from,
+# while channels rebuilt this run are stamped now
+cat > "$tmp/live.json" <<'EOF'
+{"generated":"2020-01-01T00:00:00Z",
+ "built":{"releases":{"opkg":"2026-06-01T10:00:00Z","apk":"2026-06-01T10:00:00Z"},
+          "snapshots":{"opkg":"2026-06-02T10:00:00Z","apk":"2026-06-02T10:00:00Z"}}}
+EOF
+printf 'releases/opkg\nreleases/apk\n' > "$tmp/carried.txt"
+scripts/gen-manifest.sh "$tmp/dist" "$tmp/carried.txt" "$tmp/live.json"
+[ "$(jq -r '.built.releases.opkg' "$m")" = "2026-06-01T10:00:00Z" ] || { echo "carried stamp not preserved"; exit 1; }
+[ "$(jq -r '.built.snapshots.opkg' "$m")" = "$(jq -r '.generated' "$m")" ] || { echo "rebuilt channel not stamped now"; exit 1; }
+
+# a manifest predating the built field falls back to its global generated time
+cat > "$tmp/old-live.json" <<'EOF'
+{"generated":"2026-05-05T05:05:05Z"}
+EOF
+scripts/gen-manifest.sh "$tmp/dist" "$tmp/carried.txt" "$tmp/old-live.json"
+[ "$(jq -r '.built.releases.apk' "$m")" = "2026-05-05T05:05:05Z" ] || { echo "legacy fallback"; exit 1; }

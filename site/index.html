@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>eamonxg OpenWrt Feed</title>
 <meta name="description" content="Signed third-party OpenWrt package feed for luci-theme-aurora, luci-theme-shadcn and luci-app-aurora-config. opkg and apk, snapshot and stable channels.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='16' width='24' height='9' rx='2' fill='%23272520'/%3E%3Cline x1='10' y1='16' x2='8' y2='7' stroke='%23272520' stroke-width='2' stroke-linecap='round'/%3E%3Cline x1='22' y1='16' x2='24' y2='7' stroke='%23272520' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='23' cy='20.5' r='1.6' fill='%236b4bf5'/%3E%3C/svg%3E">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/neat-annotations.css">
 <style>
 @font-face {
@@ -226,6 +226,9 @@ a:hover { color: var(--purple); }
 .pkg-table td { padding: .42rem .6rem; border-bottom: 1px dashed var(--line-soft); color: var(--ink-2); }
 .pkg-table td:first-child { color: var(--ink); overflow-wrap: anywhere; }
 .pkg-table .num { text-align: right; white-space: nowrap; }
+.chan-when { font-size: .74rem; color: var(--ink-2); margin: .1rem 0 .35rem; }
+.chan-when .d { color: var(--ink); }
+.chan-when .ago { color: var(--ink-3); }
 details { margin: .3rem 0 1.2rem; }
 details summary { cursor: pointer; font-size: .76rem; color: var(--ink-2); padding: .2rem 0; }
 details summary:hover { color: var(--purple-deep); }
@@ -233,10 +236,13 @@ details summary:hover { color: var(--purple-deep); }
 /* ── footer ───────────────────────────────────────── */
 footer {
   margin-top: 2.8rem; padding-top: .9rem; border-top: 1.5px solid var(--line);
-  font-size: .72rem; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: .3rem 1.2rem;
-  justify-content: space-between; align-items: baseline;
+  font-size: .72rem; color: var(--ink-2);
 }
-footer code { font-size: .95em; letter-spacing: .06em; }
+footer code { font-size: .95em; letter-spacing: .06em; overflow-wrap: anywhere; }
+.foot-key { margin-bottom: 3.3rem; }
+.foot-verify { color: var(--ink-3); margin-bottom: .8rem; }
+.foot-verify code { letter-spacing: 0; }
+.foot-meta { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; justify-content: space-between; align-items: baseline; }
 .colophon {
   margin-top: 3.4rem; display: flex; justify-content: flex-end; align-items: center; gap: 1rem;
   font-size: .6rem; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
@@ -268,6 +274,7 @@ footer code { font-size: .95em; letter-spacing: .06em; }
   .status .more { display: none; }
   .pkg-table { font-size: .72rem; }
   .pkg-table td, .pkg-table th { padding-left: .35rem; padding-right: .35rem; }
+  .foot-key { margin-bottom: .8rem; }
   .colophon { margin-top: 2.4rem; }
   .node-stamp { width: 120px; }
 }
@@ -309,21 +316,21 @@ footer code { font-size: .95em; letter-spacing: .06em; }
 
     <table class="status">
       <tr>
-        <td class="k">FEED</td>
+        <td class="k"><span class="en">Feed</span><span class="zh">软件源</span></td>
         <td class="st"><i></i><span class="en">signed</span><span class="zh">已签名</span></td>
-        <td class="val">usign · apk EC</td>
+        <td class="val"><span class="en">usign (opkg) · EC (apk)</span><span class="zh">opkg 用 usign · apk 用 EC</span></td>
         <td class="more">···</td>
       </tr>
       <tr>
-        <td class="k">ARCH</td>
-        <td class="st"><i></i>all</td>
-        <td class="val"><span class="en">every device</span><span class="zh">全设备通用</span></td>
+        <td class="k"><span class="en">Arch</span><span class="zh">架构</span></td>
+        <td class="st"><i></i><span class="en">universal</span><span class="zh">通用</span></td>
+        <td class="val"><span class="en">all · one build, every device</span><span class="zh">架构名 all · 一份产物通用所有设备</span></td>
         <td class="more">···</td>
       </tr>
       <tr>
-        <td class="k">CHANNELS</td>
-        <td class="st"><i></i>2 <span class="en">active</span><span class="zh">通道</span></td>
-        <td class="val">snapshots · releases</td>
+        <td class="k"><span class="en">Channels</span><span class="zh">通道</span></td>
+        <td class="st"><i></i><span class="en">2 active</span><span class="zh">2 条</span></td>
+        <td class="val"><span class="en">snapshots · releases</span><span class="zh">快照 snapshots · 稳定 releases</span></td>
         <td class="more">···</td>
       </tr>
     </table>
@@ -352,12 +359,12 @@ footer code { font-size: .95em; letter-spacing: .06em; }
       <span class="zh">脚本按包管理器数据库识别 opkg / apk，导入签名公钥并写入源配置。</span>
     </p>
 
-    <h3><span class="stamp">Snapshot</span>
+    <h3><span class="stamp"><span class="en">Snapshot</span><span class="zh">快照版</span></span>
       <span class="en">daily builds from the default branch</span>
       <span class="zh">默认分支每日构建（默认通道）</span></h3>
     <div class="cmd"><button class="copy" type="button">copy</button><pre><code><span class="p">$</span> wget -qO- https://__FEED_HOST__/install.sh | sh</code></pre></div>
 
-    <h3><span class="stamp rel">Stable</span>
+    <h3><span class="stamp rel"><span class="en">Stable</span><span class="zh">稳定版</span></span>
       <span class="en">latest tagged releases, updates only when a release is cut</span>
       <span class="zh">各包最新发布 tag，仅发版时更新</span></h3>
     <div class="cmd"><button class="copy" type="button">copy</button><pre><code><span class="p">$</span> wget -qO- https://__FEED_HOST__/install.sh | CHANNEL=releases sh</code></pre></div>
@@ -436,15 +443,19 @@ footer code { font-size: .95em; letter-spacing: .06em; }
   </section>
 
   <footer>
-    <span>
-      <span class="en">usign key fingerprint</span><span class="zh">usign 公钥指纹</span>
-      <code class="ann ann-n" data-note="opkg key filename = this"
-            data-note-en="opkg key filename = this" data-note-zh="opkg 下公钥文件名就是它">__USIGN_FPR__</code>
-    </span>
-    <span><a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a><span id="gen"></span></span>
+    <p class="foot-key">
+      <span class="en">apk signing key</span><span class="zh">apk 签名公钥</span>
+      <code class="ann ann-n" data-note="verify the pem you fetched"
+            data-note-en="verify the pem you fetched" data-note-zh="用它核对下载到的 pem">__APK_FPR__</code>
+    </p>
+    <p class="foot-verify"><code>openssl pkey -pubin -in eamonxg.pem -outform DER | openssl dgst -sha256 -binary | openssl base64</code></p>
+    <p class="foot-meta">
+      <a href="https://github.com/eamonxg/openwrt-feed">github.com/eamonxg/openwrt-feed</a>
+      <span id="gen"></span>
+    </p>
   </footer>
   <div class="colophon">
-    <span>rev 2026.07</span>
+    <span><span class="en">rev 2026.07</span><span class="zh">版次 2026.07</span></span>
     <img class="node-stamp" src="assets/violet-node.png" alt="">
   </div>
 
@@ -460,7 +471,9 @@ const STR = {
     fmt: { opkg: 'opkg (.ipk)', apk: 'apk (.apk)' },
     th: ['Package', 'Version', 'Size', ''],
     dl: 'download', i18nGroup: n => `Language packs luci-i18n-* (${n})`,
-    gen: t => ` · generated ${t}`, loadFail: 'Failed to load manifest.json', toggle: '中文',
+    gen: t => ` · page generated ${t}`, loadFail: 'Failed to load manifest.json', toggle: '中文',
+    builtLabel: 'built', locale: 'en', wrapAgo: t => `(${t})`,
+    copy: 'copy', copied: 'ok',
   },
   zh: {
     channels: {
@@ -470,13 +483,32 @@ const STR = {
     fmt: { opkg: 'opkg（.ipk）', apk: 'apk（.apk）' },
     th: ['包', '版本', '大小', ''],
     dl: '下载', i18nGroup: n => `语言包 luci-i18n-*（${n} 个）`,
-    gen: t => ` · 生成于 ${t}`, loadFail: 'manifest.json 加载失败', toggle: 'EN',
+    gen: t => ` · 本页生成于 ${t}`, loadFail: 'manifest.json 加载失败', toggle: 'EN',
+    builtLabel: '构建于', locale: 'zh-CN', wrapAgo: t => `（${t}）`,
+    copy: '复制', copied: '已复制',
   },
 };
 let lang = localStorage.getItem('feedLang') === 'zh' ? 'zh' : 'en';
 let manifest = null;
 
 const fmtSize = n => n > 1048576 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(0)+' KB';
+const fmtStamp = t => t && t.includes('T') ? t.replace('T', ' ').replace(/:\d\dZ$/, ' UTC') : (t || '');
+
+function relTime(iso, locale) {
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const days = Math.round((new Date(iso) - Date.now()) / 86400000);
+  if (Math.abs(days) < 30) return rtf.format(days, 'day');
+  const months = Math.round(days / 30.44);
+  return Math.abs(months) < 12 ? rtf.format(months, 'month') : rtf.format(Math.round(days / 365.25), 'year');
+}
+
+// Build time is recorded per channel and format. The two formats only diverge when one was
+// carried forward while the other was rebuilt, so report the older: a channel is no fresher
+// than its stalest half. Manifests predating the field fall back to the global stamp.
+function channelBuilt(channel) {
+  const stamps = Object.values((manifest.built || {})[channel] || {}).filter(Boolean).sort();
+  return stamps[0] || manifest.generated || null;
+}
 
 function renderTable(items, channel, fmt, s) {
   const t = document.createElement('table');
@@ -501,6 +533,14 @@ function renderTables() {
     const h = document.createElement('h3');
     h.innerHTML = `<span class="stamp ${meta.cls}">${meta.label}</span><span class="hint">${meta.desc}</span>`;
     root.append(h);
+    const built = channelBuilt(channel);
+    if (built) {
+      const w = document.createElement('p');
+      w.className = 'chan-when';
+      w.innerHTML = `${s.builtLabel} <span class="d">${fmtStamp(built)}</span> ` +
+        `<span class="ago">${s.wrapAgo(relTime(built, s.locale))}</span>`;
+      root.append(w);
+    }
     for (const [fmt, items] of Object.entries(fmts)) {
       if (!items.length) continue;
       const main = items.filter(it => !it.pkg.startsWith('luci-i18n-'));
@@ -517,7 +557,7 @@ function renderTables() {
       }
     }
   }
-  document.getElementById('gen').textContent = s.gen(manifest.generated);
+  document.getElementById('gen').textContent = s.gen(fmtStamp(manifest.generated));
 }
 
 function applyLang() {
@@ -526,6 +566,7 @@ function applyLang() {
   document.querySelectorAll('[data-note-en]').forEach(el => {
     el.dataset.note = lang === 'zh' ? el.dataset.noteZh : el.dataset.noteEn;
   });
+  document.querySelectorAll('.copy').forEach(b => { b.textContent = STR[lang].copy; });
   renderTables();
 }
 
@@ -540,8 +581,8 @@ document.querySelectorAll('.copy').forEach(btn => {
     const text = btn.parentElement.querySelector('code').textContent
       .split('\n').map(l => l.replace(/^\$ /, '')).join('\n');
     navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = 'ok';
-      setTimeout(() => { btn.textContent = 'copy'; }, 1200);
+      btn.textContent = STR[lang].copied;
+      setTimeout(() => { btn.textContent = STR[lang].copy; }, 1200);
     });
   });
 });
