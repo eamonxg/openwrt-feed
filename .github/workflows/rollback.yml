@@ -1,5 +1,7 @@
 name: Rollback Deployment
 
+# Rolls the Worker back to its previous version, i.e. the previous full site snapshot —
+# packages, indexes and signatures move together, so the feed stays self-consistent.
 on:
   workflow_dispatch:
 
