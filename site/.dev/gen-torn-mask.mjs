@@ -13,7 +13,11 @@
 //
 // Geometry contract with the CSS (all px, relative to the sheet edge, negative
 // = outside): the fray layer (::before) tears around a mean line 13px outside
-// the side edges / 11px outside the caps, wiggling ±11; the torn layer
+// the side edges, wiggling ±11; along the caps it hugs the tear instead —
+// mean 5px outside, ±8 at a shorter wavelength — so it only peeks out in the
+// notches of the torn line rather than reading as a solid band above/below
+// the page (the old high-frequency displacement interleaved the two edges for
+// free; a smooth baked curve at the old mean left a shelf). The torn layer
 // (::after) tears around -6 / -4, wiggling ±7.5 — the same means and scales
 // the displacement filters used. Boxes are sized so the whole wiggle fits
 // inside (masks, unlike filters, cannot paint outside the border-box), and
@@ -47,8 +51,13 @@ function makeNoise(period, wavelength, octaves) {
 
 const uri = svg => `url("data:image/svg+xml,${
   svg.replaceAll(' ', '%20').replaceAll('<', '%3C').replaceAll('>', '%3E')}")`;
+/* preserveAspectRatio='none' is load-bearing: without it a viewBox'd SVG
+   letterboxes (xMidYMid meet) inside the mask-size box instead of stretching,
+   so the 560-wide cap design painted only the centre of the strip and the
+   outer ~94px of each cap lost their mask entirely — the tear showed as a
+   floating slab with square steps at both ends. */
 const svgOf = (w, h, d) =>
-  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}'><path fill='white' d='${d}'/></svg>`;
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'><path fill='white' d='${d}'/></svg>`;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 const TILE = 512;   // vertical period of the side-strip masks
@@ -56,7 +65,7 @@ const CAPW = 560;   // cap design width; mask-size 100% stretches to the sheet
 
 /* one strip layer: mean tear line + wiggle amplitude + noise wavelengths
    (along the caps / along the sides, from the old per-axis baseFrequency) */
-const FRAY = { mean: { side: 11, cap: 11 }, amp: 11, wl: { cap: 42, side: 25 }, oct: 5,
+const FRAY = { mean: { side: 11, cap: 17 }, amp: 11, ampCap: 8, wl: { cap: 26, side: 25 }, oct: 5,
                box: { side: 43, cap: 45 } };
 const TORN = { mean: { side: 8, cap: 8 }, amp: 7.5, wl: { cap: 77, side: 48 }, oct: 4,
                box: { side: 30, cap: 38 } };
@@ -75,11 +84,13 @@ function sideMask(L, right) {
 }
 
 function capMask(L, bottom) {
-  const { amp, box: { cap: H }, mean, wl, oct } = L;
+  const { amp, ampCap = L.amp, box: { cap: H }, mean, wl, oct } = L;
   const top = makeNoise(CAPW, wl.cap, oct);
   const endL = makeNoise(H * 2, wl.side, oct);
   const endR = makeNoise(H * 2, wl.side, oct);
-  const by = x => clamp(mean.cap + amp * top(x), .5, H - .5);
+  /* ampCap shapes only the horizontal tear line; the short corner ends keep
+     the side strips' amplitude so the caps still blend into them */
+  const by = x => clamp(mean.cap + ampCap * top(x), .5, H - .5);
   const ex = (f, y) => clamp(mean.side + amp * f(y), .5, CAPW / 2);
   const p = [];
   const yj0 = by(mean.side), yj1 = by(CAPW - mean.side);
