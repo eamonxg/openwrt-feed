@@ -12,7 +12,9 @@ scripts/render-site.sh site "$tmp/dist" "feed.example.test" "0b26f36ae0f4106d" "
 [ -f "$tmp/dist/index.html" ] && [ -f "$tmp/dist/install.sh" ] && [ -f "$tmp/dist/_headers" ] \
   || { echo "site files missing"; exit 1; }
 for a in neat-annotations.css geist-mono-variable.woff2 shantell-sans-500.woff2 \
-         router-halftone.png paper-texture.jpg violet-node.png favicon.svg; do
+         router-ink-light.png router-ink-dark.png paper-texture.jpg paper-dark.jpg \
+         violet-node.png violet-node-dark.png favicon.svg \
+         ambience.m4a; do
   [ -f "$tmp/dist/assets/$a" ] || { echo "asset missing: $a"; exit 1; }
 done
 grep -q "feed.example.test" "$tmp/dist/install.sh" || { echo "host not substituted"; exit 1; }
