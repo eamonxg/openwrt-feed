@@ -258,14 +258,17 @@ html:not([data-theme="dark"]) .th-dark { display: none; }
 .mode-toggle svg { display: none; }
 html:not([data-theme="dark"]) .mode-toggle .mi-dark { display: block; }
 :root[data-theme="dark"] .mode-toggle .mi-light { display: block; }
-/* sunlit toggle — the label names the atmosphere, the stamp shows its state */
+/* sunlit toggle — same about-to-get contract as the other tools: icon and
+   label preview the next scene in the cycle (blinds → leaves → the dashed
+   empty pool, lights out); the inked stamp marks that a scene is lit now */
 .dapple-toggle[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-/* icon and label follow the active variant; off shows the inviting default */
-/* off shows what the first press gives you (leaves) — pressed state marks on/off */
-.dapple-toggle .di-leaf, .dapple-toggle .dl-l { display: none; }
-:root[data-dappled="leaves"] .dapple-toggle .di-blinds, :root[data-dappled="leaves"] .dapple-toggle .dl-b { display: none; }
-:root[data-dappled="leaves"] .dapple-toggle .di-leaf { display: block; }
-:root[data-dappled="leaves"] .dapple-toggle .dl-l { display: inline; }
+.dapple-toggle .di-off, .dapple-toggle .di-leaf,
+.dapple-toggle .dl-o, .dapple-toggle .dl-l { display: none; }
+:root[data-dappled] .dapple-toggle .di-blinds, :root[data-dappled] .dapple-toggle .dl-b { display: none; }
+:root[data-dappled="blinds"] .dapple-toggle .di-leaf { display: block; }
+:root[data-dappled="blinds"] .dapple-toggle .dl-l { display: inline; }
+:root[data-dappled="leaves"] .dapple-toggle .di-off { display: block; }
+:root[data-dappled="leaves"] .dapple-toggle .dl-o { display: inline; }
 .lang-toggle:hover, .mode-toggle:hover, .dapple-toggle:hover { background: var(--purple); border-color: var(--purple); color: var(--purple-paper); }
 
 /* ── hero ─────────────────────────────────────────── */
@@ -560,9 +563,11 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
         <span class="mode-label" id="modeLabel"></span>
       </button>
       <button class="dapple-toggle" id="dappleToggle" type="button">
+        <svg class="di-off" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-dasharray="2.6 2.5" transform="rotate(-8 7 7)"/></svg>
         <svg class="di-leaf" viewBox="0 0 14 14" aria-hidden="true"><g stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2.4" y1="1.2" x2="2.4" y2="2.9"/><line x1="5.9" y1="1.6" x2="5" y2="3"/><line x1="1" y1="4.9" x2="2.6" y2="5.2"/></g><path d="M3.6 12.7 C3.4 8.7 6.7 6 12.6 5.7 C12.4 10.4 9.7 12.9 5.6 12.8 Z" fill="currentColor"/></svg>
         <svg class="di-blinds" viewBox="0 0 14 14" aria-hidden="true"><g stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="2" y1="3" x2="12" y2="3"/><line x1="2" y1="6" x2="12" y2="6"/><line x1="2" y1="9" x2="12" y2="9"/><line x1="7" y1="9" x2="7" y2="12.5"/></g></svg>
         <span class="dapple-label">
+          <span class="dl-o"><span class="en">off</span><span class="zh">关</span></span>
           <span class="dl-l"><span class="en">leaves</span><span class="zh">叶影</span></span>
           <span class="dl-b"><span class="en">blinds</span><span class="zh">百叶窗</span></span>
         </span>
