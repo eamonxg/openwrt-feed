@@ -24,7 +24,7 @@
      derived from keys/eamonxg.pub and keys/eamonxg.pem. A surviving placeholder fails the
      build. Run scripts/preview.sh to view this file rendered rather than opening it directly. -->
 <title>EAMONXG FEED</title>
-<meta name="description" content="Signed third-party OpenWrt package feed for luci-theme-aurora, luci-theme-shadcn and luci-app-aurora-config. opkg and apk, snapshot and stable channels.">
+<meta name="description" content="Signed third-party OpenWrt package feed for luci-theme-aurora, luci-theme-shadcn and luci-app-aurora-config. opkg and apk, snapshot and release channels.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/neat-annotations.css">
 <style>
@@ -363,6 +363,13 @@ h3 { font-size: .85rem; font-weight: 600; margin: 1.5rem 0 .45rem; display: flex
 p { margin: .35rem 0; color: var(--ink-2); }
 p strong { color: var(--ink); }
 .hint { font-size: .78rem; color: var(--ink-3); margin-top: .5rem; }
+/* an ann-n label hangs about two handwritten lines below its anchor and is out of flow, so
+   whatever carries one needs that much clear paper or the next block sits under the note */
+.ann-room { padding-bottom: 2.5rem; }
+/* the label is out of flow: ann-nw in the markup grows it rightwards from its anchor, so a
+   phrase that wraps to the start of a line cannot shove it off the sheet, and 15rem keeps the
+   Chinese label breaking at its comma instead of mid-word */
+.ann-room .ann { --ann-label-max-width: 15rem; }
 a { color: var(--accent-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { color: var(--accent-text-hi); }
 
@@ -371,7 +378,9 @@ a:hover { color: var(--accent-text-hi); }
   text-transform: uppercase; padding: .08rem .5rem; border: 1.5px solid var(--ink);
   border-radius: 3px; transform: rotate(-1.2deg); white-space: nowrap;
 }
-.stamp.rel { color: var(--accent-text); border-color: var(--accent-text); transform: rotate(.8deg); }
+/* the accent goes to the recommended channel; the other stamp just leans the other way */
+.stamp.rec { color: var(--accent-text); border-color: var(--accent-text); }
+.stamp.alt { transform: rotate(.8deg); }
 .stamp.dim { border-style: dashed; border-width: 1px; color: var(--ink-2); border-color: var(--ink-2); font-weight: 500; }
 
 /* ── command blocks ───────────────────────────────── */
@@ -542,6 +551,7 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
 @media (max-width: 620px) {
   body { padding: 3vh .75rem 5vh; }
   .ann::before, .ann::after { display: none; }
+  .ann-room { padding-bottom: 0; }
   .sheet { padding: 1.7rem 1.15rem 1.5rem; }
   .masthead h1 { letter-spacing: .2em; font-size: 1.1rem; }
   .head-tools { gap: .4rem; }
@@ -656,7 +666,7 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
       <tr>
         <td class="k"><span class="en">Channels</span><span class="zh">通道</span></td>
         <td class="st"><i></i><span class="en">2 active</span><span class="zh">2 条</span></td>
-        <td class="val"><span class="en">snapshots · releases</span><span class="zh">快照 snapshots · 稳定 releases</span></td>
+        <td class="val"><span class="en">snapshots · releases</span><span class="zh">快照 snapshots · 发布 releases</span></td>
         <td class="more">···</td>
       </tr>
     </table>
@@ -685,23 +695,24 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
       <span class="zh">脚本按包管理器数据库识别 opkg / apk，导入签名公钥并写入源配置。</span>
     </p>
 
-    <h3><span class="stamp"><span class="en">Snapshot</span><span class="zh">快照版</span></span>
-      <span class="en">daily builds from the default branch</span>
-      <span class="zh">默认分支每日构建（默认通道）</span></h3>
+    <h3><span class="stamp rec"><span class="en">Snapshot</span><span class="zh">快照版</span></span>
+      <span class="en">daily builds from the main branch (default channel)</span>
+      <span class="zh">主分支每日构建（默认通道）</span></h3>
     <div class="cmd"><button class="copy" type="button">copy</button><pre><code><span class="p">$</span> wget -qO- https://__FEED_HOST__/install.sh | sh</code></pre></div>
 
-    <h3><span class="stamp rel"><span class="en">Stable</span><span class="zh">稳定版</span></span>
+    <h3><span class="stamp alt"><span class="en">Releases</span><span class="zh">发布版</span></span>
       <span class="en">latest tagged releases, updates only when a release is cut</span>
       <span class="zh">各包最新发布 tag，仅发版时更新</span></h3>
     <div class="cmd"><button class="copy" type="button">copy</button><pre><code><span class="p">$</span> wget -qO- https://__FEED_HOST__/install.sh | CHANNEL=releases sh</code></pre></div>
 
-    <p class="hint">
-      <span class="en">Snapshots carry the newest unreleased changes and may occasionally break.
-        Both channels share one feed name —
-        <span class="ann ann-n ann-purple" data-note="same name — add exactly one"
-              data-note-en="same name — add exactly one" data-note-zh="源名相同，只能加一个">pick exactly one</span>.</span>
-      <span class="zh">快照版包含未发布的最新改动，偶尔可能不稳定；两个通道源名相同，<span class="ann ann-n ann-purple" data-note="源名相同，只能加一个"
-              data-note-en="same name — add exactly one" data-note-zh="源名相同，只能加一个">只能二选一</span>。</span>
+    <p class="hint ann-room">
+      <span class="en">Of the two commands above, run just one. Releases are built from each repo’s
+        <span class="ann ann-nw ann-purple" data-note="tags promise tags, not fewer bugs"
+              data-note-en="tags promise tags, not fewer bugs"
+              data-note-zh="只担保有 tag，不担保没 bug">v* tags</span>, snapshots are built daily — take snapshots.</span>
+      <span class="zh">上面两条命令二选一，发布版按各仓库的 <span class="ann ann-nw ann-purple" data-note="只担保有 tag，不担保没 bug"
+              data-note-en="tags promise tags, not fewer bugs"
+              data-note-zh="只担保有 tag，不担保没 bug">v* 版本 tag</span> 构建，快照版每日构建，推荐使用快照版。</span>
     </p>
   </section>
 
@@ -709,16 +720,16 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
     <h2><span class="no">02</span><span class="en">Manual setup</span><span class="zh">手动安装</span></h2>
     <p>
       <span class="en">Three steps: import the signing key → add <strong>one</strong> of the two feeds → update the package index.</span>
-      <span class="zh">三步：导入公钥 → 添加源（快照 / 稳定<strong>二选一</strong>）→ 更新索引。</span>
+      <span class="zh">三步：导入公钥 → 添加源（快照 / 发布<strong>二选一</strong>）→ 更新索引。</span>
     </p>
 
     <h3>opkg <span class="stamp dim">OpenWrt ≤ 24.10</span></h3>
     <div class="cmd en"><button class="copy" type="button">copy</button><pre><code><span class="c"># 1. Import the signing key (the file name MUST be the key fingerprint)</span>
 <span class="p">$</span> wget -qO /etc/opkg/keys/__USIGN_FPR__ https://__FEED_HOST__/eamonxg.pub
 
-<span class="c"># 2a. Add the snapshot feed (default)</span>
+<span class="c"># 2a. Add the snapshot feed (recommended)</span>
 <span class="p">$</span> echo "src/gz eamonxg https://__FEED_HOST__/snapshots/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
-<span class="c"># 2b. Or: add the stable feed</span>
+<span class="c"># 2b. Or: add the release feed</span>
 <span class="p">$</span> echo "src/gz eamonxg https://__FEED_HOST__/releases/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
 
 <span class="c"># 3. Update the index, then install any feed package</span>
@@ -727,9 +738,9 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
     <div class="cmd zh"><button class="copy" type="button">copy</button><pre><code><span class="c"># 1. 导入公钥（文件名必须是密钥指纹）</span>
 <span class="p">$</span> wget -qO /etc/opkg/keys/__USIGN_FPR__ https://__FEED_HOST__/eamonxg.pub
 
-<span class="c"># 2a. 添加快照版源（默认）</span>
+<span class="c"># 2a. 添加快照版源（推荐）</span>
 <span class="p">$</span> echo "src/gz eamonxg https://__FEED_HOST__/snapshots/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
-<span class="c"># 2b. 或：添加稳定版源</span>
+<span class="c"># 2b. 或：添加发布版源</span>
 <span class="p">$</span> echo "src/gz eamonxg https://__FEED_HOST__/releases/opkg" &gt;&gt; /etc/opkg/customfeeds.conf
 
 <span class="c"># 3. 更新索引后安装任意包</span>
@@ -740,9 +751,9 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
     <div class="cmd en"><button class="copy" type="button">copy</button><pre><code><span class="c"># 1. Import the signing key</span>
 <span class="p">$</span> wget -qO /etc/apk/keys/eamonxg.pem https://__FEED_HOST__/eamonxg.pem
 
-<span class="c"># 2a. Add the snapshot feed (default)</span>
+<span class="c"># 2a. Add the snapshot feed (recommended)</span>
 <span class="p">$</span> echo "https://__FEED_HOST__/snapshots/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
-<span class="c"># 2b. Or: add the stable feed</span>
+<span class="c"># 2b. Or: add the release feed</span>
 <span class="p">$</span> echo "https://__FEED_HOST__/releases/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
 
 <span class="c"># 3. Update the index, then install any feed package</span>
@@ -751,9 +762,9 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
     <div class="cmd zh"><button class="copy" type="button">copy</button><pre><code><span class="c"># 1. 导入公钥</span>
 <span class="p">$</span> wget -qO /etc/apk/keys/eamonxg.pem https://__FEED_HOST__/eamonxg.pem
 
-<span class="c"># 2a. 添加快照版源（默认）</span>
+<span class="c"># 2a. 添加快照版源（推荐）</span>
 <span class="p">$</span> echo "https://__FEED_HOST__/snapshots/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
-<span class="c"># 2b. 或：添加稳定版源</span>
+<span class="c"># 2b. 或：添加发布版源</span>
 <span class="p">$</span> echo "https://__FEED_HOST__/releases/apk/packages.adb" &gt;&gt; /etc/apk/repositories.d/customfeeds.list
 
 <span class="c"># 3. 更新索引后安装任意包</span>
@@ -829,8 +840,8 @@ html:not([data-dappled]) .dapple g { animation-play-state: paused !important; }
 const STR = {
   en: {
     channels: {
-      snapshots: { label: 'Snapshot', cls: '', desc: 'default branch HEAD, built daily (default channel)' },
-      releases:  { label: 'Stable', cls: 'rel', desc: 'last 2 tagged releases of each package — keeping 2 means release-moment installs never 404' },
+      snapshots: { label: 'Snapshot', cls: 'rec', desc: 'main branch HEAD, built daily (default channel)' },
+      releases:  { label: 'Releases', cls: 'alt', desc: 'last 2 tagged releases of each package — keeping 2 means release-moment installs never 404' },
     },
     fmt: { opkg: 'opkg (.ipk)', apk: 'apk (.apk)' },
     th: ['Package', 'Version', 'Size', ''],
@@ -844,8 +855,8 @@ const STR = {
   },
   zh: {
     channels: {
-      snapshots: { label: '快照版', cls: '', desc: '默认分支 HEAD，每日构建（默认通道）' },
-      releases:  { label: '稳定版', cls: 'rel', desc: '各包最近 2 个发布 tag——保留 2 个，发版瞬间安装不 404' },
+      snapshots: { label: '快照版', cls: 'rec', desc: '主分支 HEAD，每日构建（默认通道）' },
+      releases:  { label: '发布版', cls: 'alt', desc: '各包最近 2 个发布 tag——保留 2 个，发版瞬间安装不 404' },
     },
     fmt: { opkg: 'opkg（.ipk）', apk: 'apk（.apk）' },
     th: ['包', '版本', '大小', ''],
