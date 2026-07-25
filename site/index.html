@@ -920,17 +920,27 @@ let themeExplicit = (() => {
 const themeMeta = document.querySelector('meta[name="theme-color"]');
 const THEME_BAR = { light: '#cfccc3', dark: '#1e1c18' };
 
-/* Ambience for the sunlit overlay: a single CC0 field recording shared by both
-   variants, and nothing else — the earlier synthesized wind bed was retired as
-   noisy. Autoplay policy: starts inside the click/keydown that picks the variant;
-   a page restored into the overlay stays silent until the first interaction. */
+/* Ambience for the sunlit overlay: one CC0 field recording per variant, and
+   nothing else — first the synthesized wind bed, then the shared wind recording,
+   were both retired as noisy. Steady broadband noise reads as a fan however
+   quiet you make it; what reads as calm is a near-silent floor with sparse
+   events, so each bed is scene-matched instead — blinds get the morning outside
+   the window, leaves get the afternoon under the fronds. A sparse bed can't be
+   levelled by RMS, which reads it by its few loud calls and leaves it sounding
+   far quieter than the wind it replaced: both are cut so the MEDIAN 400 ms
+   K-weighted block sits at -39.2 LUFS, the retired bed's, which is what "as
+   present as before" actually measures. Sharing that level is what lets GAIN
+   stay one constant; their seams sit at each recording's own floor so the loop
+   crossfade doesn't pump. Only the active variant is fetched. Autoplay policy:
+   starts inside the click/keydown that picks the variant; a page restored into
+   the overlay stays silent until the first interaction. */
 const breeze = (() => {
   let ac, master, sampleG, pan, timer, susT, armed = false;
   let variant = null;               // false | 'leaves' | 'blinds'
-  const AMB = 'assets/ambience.m4a';
-  const GAIN = .9;                  // the recording sits ≈ -39 dBFS RMS
-  let buf = null;
-  let sampleStop = null, wantToken = 0;
+  const AMB = { blinds: 'assets/ambience-blinds.m4a', leaves: 'assets/ambience-leaves.m4a' };
+  const GAIN = .9;                  // both beds carry the same median loudness
+  const bufs = {};                  // variant → decoded bed, fetched on first use
+  let sampleStop = null, playing = null, wantToken = 0;
 
   function graph() {
     ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -969,15 +979,15 @@ const breeze = (() => {
       tmr = setTimeout(() => tick(nextAt + period), Math.max(500, (nextAt + period - ac.currentTime - 2) * 1000));
     };
     tick(ac.currentTime + .05);
-    return () => {
+    return (fade = .5) => {
       stopped = true; clearTimeout(tmr);
       const now = ac.currentTime;
       for (const { src, g } of live) {
         try {
           g.gain.cancelScheduledValues(now);
           g.gain.setValueAtTime(g.gain.value, now);
-          g.gain.linearRampToValueAtTime(0, now + .5);
-          src.stop(now + .6);
+          g.gain.linearRampToValueAtTime(0, now + fade);
+          src.stop(now + fade + .1);
         } catch (e) {}
       }
     };
@@ -985,23 +995,28 @@ const breeze = (() => {
 
   function startSample() {
     if (!variant) return;
-    if (sampleStop) return;       // same bed for both variants — keep it rolling
-    const token = ++wantToken;
+    if (playing === variant) return;   // right bed already rolling
+    const want = variant, token = ++wantToken;
     const go = () => {
-      if (token !== wantToken || !wanted() || ac.state !== 'running') return;
+      if (token !== wantToken || !wanted() || variant !== want || ac.state !== 'running') return;
+      // swapping scenes: the outgoing bed fades over the overlay's own 1.8 s
+      // crossfade while the incoming one ramps up inside loopSample
+      if (sampleStop) { sampleStop(1.6); sampleStop = null; }
+      playing = want;
       sampleG.gain.setTargetAtTime(GAIN, ac.currentTime, 1);
-      sampleStop = loopSample(buf);
+      sampleStop = loopSample(bufs[want]);
     };
-    if (buf) go();
-    else fetch(AMB)
+    if (bufs[want]) go();
+    else fetch(AMB[want])
       .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
       .then(a => ac.decodeAudioData(a))
-      .then(b => { buf = b; go(); })
+      .then(b => { bufs[want] = b; go(); })
       .catch(() => {});           // recording unavailable → the scene stays silent
   }
 
   function stopSample() {
     ++wantToken;
+    playing = null;
     if (sampleStop) { sampleStop(); sampleStop = null; }
     if (sampleG) sampleG.gain.setTargetAtTime(0, ac.currentTime, .3);
   }
