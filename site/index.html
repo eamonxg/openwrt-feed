@@ -286,16 +286,14 @@ html:not([data-theme="dark"]) .mode-toggle .mi-dark { display: block; }
   font-size: .62rem; letter-spacing: .16em; color: var(--ink-3);
 }
 .hero-sig::after { content: ""; display: block; width: 1.1em; border-top: 1px solid var(--ink-3); margin: .5em 0 0 auto; }
-/* same drawing, two cuts at one size. The light one is opaque ink-on-paper with a
-   warm ~207-luminance ground: saturate neutralizes the yellow cast, brightness then
-   clears every channel past white so multiply dissolves the rectangle into the
-   sheet, and contrast puts the lost stroke weight back. The dark one is the strokes
-   alone on alpha and needs none of it. */
+/* Same drawing, two paper-native cuts at one size. The light cut uses multiply to
+   dissolve its pale paper into the sheet; the dark cut uses lighten so its charcoal
+   ground disappears while the warm cream ink remains. */
 .router {
   display: block; width: min(100%, 339px); height: auto;
   mix-blend-mode: multiply; filter: saturate(.5) brightness(1.26) contrast(1.05);
 }
-.router.th-dark { mix-blend-mode: normal; filter: none; }
+.router.th-dark { mix-blend-mode: lighten; filter: none; }
 
 /* ── status rows ──────────────────────────────────── */
 .status { width: 100%; border-collapse: collapse; margin: 1.2rem 0 1.8rem; font-size: .8rem; }
