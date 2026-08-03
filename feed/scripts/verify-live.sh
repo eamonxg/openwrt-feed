@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # verify-live.sh <host> — acceptance checks against the deployed feed (spec §12).
 set -euo pipefail
+cd "$(dirname "$0")/.."
 host=$1
 base="https://$host"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
