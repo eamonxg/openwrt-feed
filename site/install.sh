@@ -71,11 +71,90 @@ fi
 
 ALL="__PACKAGES__"
 
+# ---------------------------------------------------------------- probing ---
+# Two kinds of fact, deliberately different in reliability:
+#   installed-or-not — the decision input, straight from the package manager
+#                      database, authoritative
+#   version strings  — display only, best effort. opkg and apk version schemes
+#                      are not comparable, so the script never orders them; it
+#                      only ever shows them.
+
+apk_ver() { # <pkg>; reads one `apk list` line on stdin, writes the version
+  awk -v p="$1" '{ n = $1; sub("^" p "-", "", n); print n; exit }'
+}
+
+is_installed() { # <pkg>
+  if [ "$PM" = apk ]; then
+    [ -n "$(apk info -e "$1" 2>/dev/null)" ]
+  else
+    [ -n "$(opkg list-installed "$1" 2>/dev/null)" ]
+  fi
+}
+
+installed_ver() { # <pkg>
+  if [ "$PM" = apk ]; then
+    apk list -I "$1" 2>/dev/null | apk_ver "$1"
+  else
+    opkg list-installed "$1" 2>/dev/null | awk -v p="$1" '$1 == p { print $3; exit }'
+  fi
+}
+
+avail_ver() { # <pkg>
+  if [ "$PM" = apk ]; then
+    apk list "$1" 2>/dev/null | apk_ver "$1"
+  else
+    opkg list "$1" 2>/dev/null | awk -v p="$1" '$1 == p { print $3; exit }'
+  fi
+}
+
+in_feed() { # <pkg> — is the name known to any configured index?
+  if [ "$PM" = apk ]; then
+    [ -n "$(apk list "$1" 2>/dev/null)" ]
+  else
+    [ -n "$(opkg list "$1" 2>/dev/null)" ]
+  fi
+}
+
+# Field 2 of the state file carries two distinct facts and must not conflate
+# them: "-" means not installed, "?" means installed but the version string
+# could not be parsed. Storing empty for both would show an unparseable version
+# as "not installed" while the executor still dispatched "upgrade" — the display
+# and the decision would disagree, and the confirmation prompt is the user's
+# last chance to catch a wrong verb.
+probe_all() {
+  : > "$TMP/state"
+  for p in $ALL; do
+    if is_installed "$p"; then iv=$(installed_ver "$p"); iv=${iv:-?}; else iv="-"; fi
+    printf '%s\t%s\t%s\n' "$p" "$iv" "$(avail_ver "$p")" >> "$TMP/state"
+  done
+}
+
+state_field() { # <pkg> <field-number>
+  awk -F'\t' -v p="$1" -v n="$2" '$1 == p { print $n; exit }' "$TMP/state"
+}
+
+status_text() { # <pkg>
+  iv=$(state_field "$1" 2)
+  if [ "$iv" = "-" ]; then
+    echo "not installed"
+  else
+    echo "installed $iv -> upgrade"
+  fi
+}
+
+probe_all
+
 print_only() {
   echo ""
   echo "Feed installed (channel: $CHANNEL). Available packages:"
   for p in $ALL; do
-    echo "  $PM $ADD $p"
+    av=$(state_field "$p" 3)
+    printf '  %-28s %-10s %s\n' "$p" "${av:--}" "$(status_text "$p")"
+  done
+  echo ""
+  echo "Install with:"
+  for p in $ALL; do
+    if is_installed "$p"; then echo "  $PM $UP $p"; else echo "  $PM $ADD $p"; fi
   done
   echo "Language packs: $PM $ADD luci-i18n-aurora-config-<lang>  (e.g. zh-cn, de, ja)"
 }

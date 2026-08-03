@@ -68,4 +68,16 @@ run_install "" FAKE_WGET_FAIL=1
 [ "$rc" != 0 ] || { echo "FAIL: failed download should exit non-zero"; fail=1; }
 assert_out "libustream-ssl-mbedtls"
 
+# --- the printed listing reflects probed state ------------------------------
+setup_sandbox opkg
+run_install "" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: listing run exited $rc"; echo "$out"; fail=1; }
+assert_out "not installed"
+assert_out "installed 1.0.1"
+assert_log "opkg list-installed luci-theme-shadcn"
+assert_log "opkg list luci-theme-aurora"
+
 exit "$fail"
