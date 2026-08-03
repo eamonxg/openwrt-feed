@@ -7,6 +7,9 @@
 // approved them (Task 6/9 write the "approved" side; this file only needs to
 // know the key shape).
 
+import { HttpError } from "./auth.js";
+import { errorResponse } from "./http.js";
+
 function startsWithBytes(bytes, magic) {
   if (bytes.length < magic.length) return false;
   for (let i = 0; i < magic.length; i++) {
@@ -96,4 +99,55 @@ export function r2Key(state, id, kind) {
     throw new Error(`r2Key: invalid state "${state}"`);
   }
   return `${state}/${id}/${kind}`;
+}
+
+// ---------------------------------------------------------------------------
+// #8 GET /assets/:id/:kind — stream an approved asset from R2.
+// ---------------------------------------------------------------------------
+
+async function serveAsset(env, id, kind) {
+  // The D1 row is the source of truth for "may this be served at all" — an
+  // asset is only ever public once its row's status flips to 'approved'
+  // (Task 9's approval flow). The R2 key itself is always recomputed as
+  // approved/{id}/{kind} here rather than trusted from the row's stored
+  // r2_key column, so serving never depends on that column having been
+  // rewritten by the (not-yet-built) approval flow.
+  const row = await env.DB.prepare(
+    "SELECT 1 FROM assets WHERE config_id = ? AND kind = ? AND status = 'approved'"
+  )
+    .bind(id, kind)
+    .first();
+
+  if (!row) {
+    throw new HttpError(404, "not_found", "Asset not found.");
+  }
+
+  const object = await env.R2.get(r2Key("approved", id, kind));
+  if (!object) {
+    throw new HttpError(404, "not_found", "Asset not found.");
+  }
+
+  const sniffedJpeg = object.customMetadata?.format === "jpeg";
+  const headers = {
+    "content-type": contentTypeFor(kind, sniffedJpeg),
+    "cache-control": "public, max-age=604800, immutable",
+  };
+  if (kind === "logo_svg") {
+    headers["content-security-policy"] = "default-src 'none'";
+    headers["x-content-type-options"] = "nosniff";
+  }
+
+  return new Response(object.body, { headers });
+}
+
+export async function handleAssetServe(request, env, params) {
+  try {
+    return await serveAsset(env, params.id, params.kind);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
 }

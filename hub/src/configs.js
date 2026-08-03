@@ -112,6 +112,117 @@ async function findDuplicate(db, theme, hash) {
     .first();
 }
 
+// ---------------------------------------------------------------------------
+// #1 GET /themes/:theme/configs — browse (list)
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 24;
+
+function parseSort(url) {
+  return url.searchParams.get("sort") === "new" ? "new" : "hot";
+}
+
+// Invalid/absent page -> 1. Number("") is 0, Number(null-ish) is NaN; both
+// fail the isInteger+>=1 check and fall back to the default.
+function parsePage(url) {
+  const raw = url.searchParams.get("page");
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+// The 8-color list summary: light/dark each {bg, surface, text, brand},
+// pulled straight out of the stored (already-validated) payload's `colors`
+// section — never re-validated here.
+function extractPalette(payload) {
+  const colors = payload.colors;
+  const pick = (prefix) => ({
+    bg: colors[`${prefix}_bg`],
+    surface: colors[`${prefix}_surface`],
+    text: colors[`${prefix}_text`],
+    brand: colors[`${prefix}_brand`],
+  });
+  return { light: pick("light"), dark: pick("dark") };
+}
+
+async function listConfigs(request, env, theme) {
+  const url = new URL(request.url);
+  const sort = parseSort(url);
+  const page = parsePage(url);
+  const offset = (page - 1) * PAGE_SIZE;
+  // `sort` is one of exactly two hardcoded literals (never user-interpolated
+  // beyond that ternary), so building the ORDER BY clause this way carries no
+  // injection risk.
+  const orderBy = sort === "new" ? "created_at DESC, id ASC" : "downloads DESC, id ASC";
+
+  // Fetch one extra row (25) to determine has_more without a second COUNT(*)
+  // query, then trim back to the page size below.
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, author, downloads, assets_status, created_at, payload
+       FROM configs
+      WHERE theme = ? AND status = 'active'
+      ORDER BY ${orderBy}
+      LIMIT ? OFFSET ?`
+  )
+    .bind(theme, PAGE_SIZE + 1, offset)
+    .all();
+
+  const has_more = results.length > PAGE_SIZE;
+  const items = results.slice(0, PAGE_SIZE).map((row) => ({
+    id: row.id,
+    name: row.name,
+    author: row.author,
+    downloads: row.downloads,
+    assets_status: row.assets_status,
+    created_at: row.created_at,
+    palette: extractPalette(JSON.parse(row.payload)),
+  }));
+
+  return jsonResponse({ items, page, has_more });
+}
+
+// ---------------------------------------------------------------------------
+// #2 GET /themes/:theme/configs/:id — detail
+// ---------------------------------------------------------------------------
+
+async function getConfigDetail(env, theme, id) {
+  const row = await env.DB.prepare(
+    "SELECT * FROM configs WHERE theme = ? AND id = ? AND status = 'active'"
+  )
+    .bind(theme, id)
+    .first();
+
+  if (!row) {
+    throw new HttpError(404, "not_found", "Config not found.");
+  }
+
+  const { results: assetRows } = await env.DB.prepare(
+    "SELECT kind, sha256, size FROM assets WHERE config_id = ? AND status = 'approved' ORDER BY kind"
+  )
+    .bind(id)
+    .all();
+
+  const assets = assetRows.map((a) => ({
+    kind: a.kind,
+    sha256: a.sha256,
+    size: a.size,
+    url: `/assets/${id}/${a.kind}`,
+  }));
+
+  return jsonResponse({
+    id: row.id,
+    name: row.name,
+    author: row.author,
+    description: row.description,
+    version: row.version,
+    downloads: row.downloads,
+    assets_status: row.assets_status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    payload: JSON.parse(row.payload),
+    assets,
+  });
+}
+
 async function shareConfig(request, env, theme) {
   const body = await parseJsonBody(request);
 
@@ -212,6 +323,30 @@ export async function handleShare(request, env, params) {
     }
     // Unexpected error: never leak internals (stack traces, driver error
     // text) into the response body.
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+export async function handleListConfigs(request, env, params) {
+  try {
+    return await listConfigs(request, env, params.theme);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+export async function handleConfigDetail(request, env, params) {
+  try {
+    return await getConfigDetail(env, params.theme, params.id);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
     console.error(err);
     return errorResponse(500, "internal_error", "Something went wrong.");
   }
