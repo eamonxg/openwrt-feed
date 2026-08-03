@@ -1,0 +1,68 @@
+name: Deploy Themes Hub
+
+on:
+  push:
+    branches: [main]
+    paths: ["hub/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: hub-pipeline
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: hub/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: hub
+
+      - name: Run tests
+        run: npx vitest run
+        working-directory: hub
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Render wrangler config
+        run: hub/scripts/render-config.sh "${{ vars.HUB_HOST }}" "${{ vars.HUB_D1_ID }}"
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.113.0"
+          command: d1 migrations apply themes-hub --remote --config hub/wrangler.jsonc
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.113.0"
+          command: deploy --config hub/wrangler.jsonc
+
+      - name: Post-deploy smoke
+        run: |
+          set -euo pipefail
+          host="${{ vars.HUB_HOST }}"
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$host/api/v1/ping" || true)
+            [ "$code" = 200 ] && break
+            echo "attempt $i: HTTP $code — waiting 15s (domain/cert propagation)"; sleep 15
+          done
+          [ "$code" = 200 ] || { echo "smoke failed: HTTP $code"; exit 1; }
+          echo "smoke OK"

@@ -1,0 +1,28 @@
+name: Rollback Themes Hub
+
+# Rolls the Worker back to its previous deployed version. D1 migrations do NOT
+# roll back with the Worker — schema changes are one-way, so any new
+# migration applied by deploy-hub.yml must stay backward-compatible with the
+# prior Worker version until it is safe to retire.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: hub-pipeline
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Render wrangler config
+        run: hub/scripts/render-config.sh "${{ vars.HUB_HOST }}" "${{ vars.HUB_D1_ID }}"
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.113.0"
+          command: rollback --yes --config hub/wrangler.jsonc
