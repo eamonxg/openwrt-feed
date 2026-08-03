@@ -15,6 +15,8 @@ case "$CHANNEL" in
   *) echo "invalid CHANNEL: $CHANNEL (releases|snapshots)" >&2; exit 1 ;;
 esac
 
+[ "$(id -u)" = 0 ] || { echo "This installer must be run as root." >&2; exit 1; }
+
 TMP=$(mktemp -d) || { echo "cannot create a temporary directory" >&2; exit 1; }
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
@@ -32,6 +34,17 @@ fi
 command -v "$PM" >/dev/null 2>&1 || { echo "$PM database found but $PM binary is missing" >&2; exit 1; }
 echo "Package manager: $PM  |  channel: $CHANNEL"
 
+# fetch <url> <dest> — OpenWrt's default wget is uclient-fetch, which cannot do
+# TLS without libustream-ssl. Say that, rather than surfacing a bare exit code.
+fetch() {
+  if wget -qO "$2" "$1"; then return 0; fi
+  echo "" >&2
+  echo "ERROR: could not fetch $1" >&2
+  echo "If this router has no HTTPS support yet, install it and re-run:" >&2
+  echo "  $PM $ADD libustream-ssl-mbedtls ca-bundle" >&2
+  exit 1
+}
+
 # drop_lines <file> <fixed-string> — remove our previous feed lines (idempotent re-runs,
 # clean channel switches; other feeds' lines are untouched)
 drop_lines() {
@@ -43,12 +56,12 @@ drop_lines() {
 # Step 2: import the signing key and add the feed
 if [ "$PM" = apk ]; then
   mkdir -p "$ROOT/etc/apk/keys" "$ROOT/etc/apk/repositories.d"
-  wget -qO "$ROOT/etc/apk/keys/eamonxg.pem" "https://$HOST/eamonxg.pem"
+  fetch "https://$HOST/eamonxg.pem" "$ROOT/etc/apk/keys/eamonxg.pem"
   drop_lines "$ROOT/etc/apk/repositories.d/customfeeds.list" "https://$HOST/"
   echo "https://$HOST/$CHANNEL/apk/packages.adb" >> "$ROOT/etc/apk/repositories.d/customfeeds.list"
 else
   mkdir -p "$ROOT/etc/opkg/keys"
-  wget -qO "$ROOT/etc/opkg/keys/$FPR" "https://$HOST/eamonxg.pub"
+  fetch "https://$HOST/eamonxg.pub" "$ROOT/etc/opkg/keys/$FPR"
   drop_lines "$ROOT/etc/opkg/customfeeds.conf" "src/gz eamonxg "
   echo "src/gz eamonxg https://$HOST/$CHANNEL/opkg" >> "$ROOT/etc/opkg/customfeeds.conf"
 fi

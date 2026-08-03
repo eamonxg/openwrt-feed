@@ -55,4 +55,17 @@ refute_log "opkg install luci-theme-aurora"
 grep -q "src/gz eamonxg https://feed.example.test/snapshots/opkg" \
   "$tmp/root/etc/opkg/customfeeds.conf" || { echo "FAIL: feed line not written"; fail=1; }
 
+# --- non-root exits early with a clear message -------------------------------
+setup_sandbox opkg
+run_install "" FAKE_UID=1000
+[ "$rc" != 0 ] || { echo "FAIL: non-root run should exit non-zero"; fail=1; }
+assert_out "must be run as root"
+refute_log "opkg update"
+
+# --- a failed key download names the missing TLS package ---------------------
+setup_sandbox opkg
+run_install "" FAKE_WGET_FAIL=1
+[ "$rc" != 0 ] || { echo "FAIL: failed download should exit non-zero"; fail=1; }
+assert_out "libustream-ssl-mbedtls"
+
 exit "$fail"
