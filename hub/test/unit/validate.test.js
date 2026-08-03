@@ -269,6 +269,46 @@ describe("validatePayload - colors", () => {
     expectHttpError(() => validatePayload(payload), 400, "bad_colors");
   });
 
+  it("accepts 3-digit hex color (#fff) and lowercases it", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#fff";
+    const cleaned = validatePayload(payload);
+    expect(cleaned.colors.light_bg).toBe("#fff");
+  });
+
+  it("accepts 3-digit uppercase hex color (#ABC) and lowercases it", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#ABC";
+    const cleaned = validatePayload(payload);
+    expect(cleaned.colors.light_bg).toBe("#abc");
+  });
+
+  it("accepts 4-digit hex color (#0009) and lowercases it", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#0009";
+    const cleaned = validatePayload(payload);
+    expect(cleaned.colors.light_bg).toBe("#0009");
+  });
+
+  it("accepts 8-digit hex color (#121a2221) and lowercases it", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#121a2221";
+    const cleaned = validatePayload(payload);
+    expect(cleaned.colors.light_bg).toBe("#121a2221");
+  });
+
+  it("rejects 5-digit hex color (#12345)", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#12345";
+    expectHttpError(() => validatePayload(payload), 400, "bad_colors");
+  });
+
+  it("rejects 7-digit hex color (#1234567)", () => {
+    const payload = buildPayload();
+    payload.colors.light_bg = "#1234567";
+    expectHttpError(() => validatePayload(payload), 400, "bad_colors");
+  });
+
   it("rejects a non-string colors container", () => {
     const payload = buildPayload({ colors: null });
     expectHttpError(() => validatePayload(payload), 400, "bad_colors");

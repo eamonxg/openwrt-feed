@@ -63,7 +63,7 @@ const MAX_PAYLOAD_JSON_LENGTH = 262144; // 256 * 1024
 // Global constraint: strip U+0000-U+001F and U+007F before use.
 const CONTROL_CHARS_PATTERN = new RegExp("[\u0000-\u001F\u007F]", "g");
 
-const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const HEX_COLOR_PATTERN = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const REM_PATTERN = /^(\d+(\.\d+)?)rem$/;
 const FONT_STACK_PATTERN = /^[A-Za-z0-9 ,"'\-]+$/;
 // http(s):// or a relative path — but not a protocol-relative "//host" URL,
