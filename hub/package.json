@@ -1,0 +1,14 @@
+{
+  "name": "themes-hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev --config wrangler.test.jsonc"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.21",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.118.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "themes-hub",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./site",
+    "binding": "SITE",
+    "run_worker_first": ["/api/*", "/assets/*", "/c/*", "/admin", "/admin/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "themes-hub",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "themes-hub-assets"
+    }
+  ]
+}
