@@ -370,10 +370,10 @@ export async function handleConfigDetail(request, env, params) {
 // #4 PUT /themes/:theme/configs/:id — author update
 // #5 DELETE /themes/:theme/configs/:id — author removal
 //
-// Both share the same owner-authorization gate: look up the device from its
-// token with silent registration OFF (an unrecognized token can never be an
-// owner), then load the config row and compare device ids. Order matters —
-// see requireOwnedConfig's own comment for the exact reasoning.
+// Both share the same owner-authorization gate: load the config row first,
+// then look up the device from its token (silent registration OFF), then
+// check banned/ownership. Order matters — see requireOwnedConfig's own
+// comment for the exact reasoning.
 // ---------------------------------------------------------------------------
 
 async function findDuplicateExcluding(db, theme, hash, excludeId) {
@@ -383,20 +383,17 @@ async function findDuplicateExcluding(db, theme, hash, excludeId) {
     .first();
 }
 
-// An unknown token always surfaces as 403 not_owner without ever touching
-// the configs table, so a guessed/stolen id can't be used to distinguish
-// "doesn't exist" from "not yours" via a different status code. Once the
-// device is real, the config's own existence is checked first (404
-// not_found for missing/removed/theme-mismatched rows), and only then is
-// ownership compared (403 not_owner). Banned-ness is checked last, after
-// ownership is confirmed, so a banned device that doesn't even own this
-// config still sees 403 not_owner rather than leaking its own ban status.
+// Config existence is checked FIRST: the config's presence is not a secret
+// worth protecting behind a uniform error code — it's already exposed by the
+// public, unauthenticated GET detail endpoint (#2), so a 404-vs-403 split
+// here reveals nothing an attacker couldn't already learn for free. Giving
+// 404 priority instead lets a legitimate owner's client tell "this config is
+// gone" apart from "your token is wrong," which matters more in practice.
+// So: missing/removed/theme-mismatched row -> 404 not_found. Only once the
+// config is confirmed to exist do we resolve the token -> device (silent
+// registration OFF; unknown token -> 403 not_owner), then check banned-ness,
+// then compare device ids (403 not_owner) last.
 async function requireOwnedConfig(db, theme, id, deviceToken) {
-  const device = await deviceFromToken(db, deviceToken, { register: false });
-  if (!device) {
-    throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
-  }
-
   const row = await db
     .prepare("SELECT * FROM configs WHERE theme = ? AND id = ? AND status = 'active'")
     .bind(theme, id)
@@ -405,12 +402,17 @@ async function requireOwnedConfig(db, theme, id, deviceToken) {
     throw new HttpError(404, "not_found", "Config not found.");
   }
 
-  if (row.device_id !== device.id) {
+  const device = await deviceFromToken(db, deviceToken, { register: false });
+  if (!device) {
     throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
   }
 
   if (device.banned) {
     throw new HttpError(403, "device_banned", "This device has been banned.");
+  }
+
+  if (row.device_id !== device.id) {
+    throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
   }
 
   return row;

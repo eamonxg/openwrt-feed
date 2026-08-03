@@ -29,6 +29,10 @@ const ALT_PNG_BASE64 = bytesToBase64(
   new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xff, 0xee, 0xee])
 );
 
+// Minimal bytes passing the ICO magic-byte sniff (00 00 01 00 ...), used
+// alongside favicon_png to exercise the multi-kind assets_status recompute.
+const ICO_BASE64 = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]));
+
 function putJson(id, body) {
   return SELF.fetch(configUrl(id), {
     method: "PUT",
@@ -169,6 +173,17 @@ describe("PUT /api/v1/themes/:theme/configs/:id", () => {
       device_token: token,
       name: "Ghost",
       payload: makePayload({ colors: { light_bg: "#000113" } }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: { code: "not_found", message: expect.any(String) } });
+  });
+
+  it("an unregistered device_token against a nonexistent id returns 404 not_found, not 403 (existence is checked first)", async () => {
+    const res = await putJson("ghostid1", {
+      device_token: makeToken(),
+      name: "Ghost",
+      payload: makePayload({ colors: { light_bg: "#000113a" } }),
     });
 
     expect(res.status).toBe(404);
@@ -317,6 +332,43 @@ describe("PUT /api/v1/themes/:theme/configs/:id", () => {
     expect(config.assets_status).toBe("none");
   });
 
+  it("keeping one approved kind and adding a brand-new kind recomputes assets_status to 'pending', leaving the kept kind approved and the new kind pending", async () => {
+    const faviconPng = await makeAsset("favicon_png");
+    const { id, token } = await shareConfig({
+      payload: makePayload({ colors: { light_bg: "#000125" }, assets: [faviconPng.manifest] }),
+      assets: [faviconPng.body],
+    });
+    await approveAsset(id, "favicon_png", base64ToBytes(PNG_1X1_BASE64));
+
+    const faviconIco = await makeAsset("favicon_ico", ICO_BASE64);
+    const res = await putJson(id, {
+      device_token: token,
+      name: "Add A Kind",
+      payload: makePayload({
+        colors: { light_bg: "#000126" },
+        assets: [faviconPng.manifest, faviconIco.manifest],
+      }),
+      assets: [faviconPng.body, faviconIco.body],
+    });
+
+    expect(res.status).toBe(200);
+
+    const config = await configRow(id);
+    expect(config.assets_status).toBe("pending");
+
+    const pngRow = await assetRow(id, "favicon_png");
+    expect(pngRow.status).toBe("approved");
+    expect(pngRow.sha256).toBe(faviconPng.manifest.sha256);
+
+    const icoRow = await assetRow(id, "favicon_ico");
+    expect(icoRow.status).toBe("pending");
+    expect(icoRow.sha256).toBe(faviconIco.manifest.sha256);
+
+    const icoObj = await env.R2.get(`pending/${id}/favicon_ico`);
+    expect(icoObj).not.toBeNull();
+    await icoObj.arrayBuffer();
+  });
+
   it("body over 12 MB is rejected with 413 too_large before any parsing", async () => {
     const bigBody = "x".repeat(12 * 1024 * 1024 + 10);
     const res = await SELF.fetch(configUrl("whatever1"), { method: "PUT", body: bigBody });
@@ -346,6 +398,13 @@ describe("DELETE /api/v1/themes/:theme/configs/:id", () => {
     });
     await approveAsset(id, "favicon_png", base64ToBytes(PNG_1X1_BASE64));
 
+    // Seed a dl_dedup row and a reports row against the still-active config
+    // — the brief says these are left alone by DELETE (history for an
+    // already-removed config stays meaningful), so both must still be
+    // present afterwards.
+    await env.DB.prepare("INSERT INTO dl_dedup (config_id, device_hash) VALUES (?, ?)").bind(id, "f".repeat(64)).run();
+    await env.DB.prepare("INSERT INTO reports (config_id, reason, ip) VALUES (?, ?, ?)").bind(id, "spam", "203.0.113.99").run();
+
     const res = await deleteJson(id, { device_token: token });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id, removed: true });
@@ -363,6 +422,15 @@ describe("DELETE /api/v1/themes/:theme/configs/:id", () => {
     const list = await SELF.fetch(`${CONFIGS_URL}?sort=new`);
     const listBody = await list.json();
     expect(listBody.items.find((item) => item.id === id)).toBeUndefined();
+
+    const dlDedupRow = await env.DB
+      .prepare("SELECT * FROM dl_dedup WHERE config_id = ? AND device_hash = ?")
+      .bind(id, "f".repeat(64))
+      .first();
+    expect(dlDedupRow).toMatchObject({ config_id: id, device_hash: "f".repeat(64) });
+
+    const reportRow = await env.DB.prepare("SELECT * FROM reports WHERE config_id = ?").bind(id).first();
+    expect(reportRow).toMatchObject({ config_id: id, reason: "spam", ip: "203.0.113.99" });
   });
 
   it("a well-formed but unregistered device_token returns 403 not_owner and leaves the config active", async () => {
@@ -405,6 +473,13 @@ describe("DELETE /api/v1/themes/:theme/configs/:id", () => {
     const { token } = await shareConfig({ payload: makePayload({ colors: { light_bg: "#000206" } }) });
 
     const res = await deleteJson("nosuchid2", { device_token: token });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: { code: "not_found", message: expect.any(String) } });
+  });
+
+  it("an unregistered device_token against a nonexistent id returns 404 not_found, not 403 (existence is checked first)", async () => {
+    const res = await deleteJson("ghostid2", { device_token: makeToken() });
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: { code: "not_found", message: expect.any(String) } });
