@@ -316,3 +316,27 @@ describe("sanitizeSvg — fix-round 1: attribute-name smuggling", () => {
     expectThrows('<svg><rect width="1"></rect"x></svg>');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Final-review Finding 4: <style> url() veto missed @import.
+// ---------------------------------------------------------------------------
+
+describe("sanitizeSvg — final-review fix: <style> @import veto", () => {
+  it("empties a <style> element whose text contains an @import (quoted form, no url())", () => {
+    const out = sanitizeSvg('<svg><style>@import "https://evil.example/x.css";</style><rect width="1"/></svg>');
+    expect(out).not.toContain("evil.example");
+    expect(out).not.toContain("@import");
+    expect(out).toMatch(/<style\s*\/>|<style><\/style>/);
+  });
+
+  it("empties a <style> element whose @import is uppercase/mixed-case", () => {
+    const out = sanitizeSvg('<svg><style>@ImPoRT url(http://evil.example/x.css);</style><rect width="1"/></svg>');
+    expect(out).not.toContain("evil.example");
+    expect(out).toMatch(/<style\s*\/>|<style><\/style>/);
+  });
+
+  it("still keeps a normal <style> element with no url()/@import", () => {
+    const out = sanitizeSvg('<svg><style>rect{fill:#fff}</style><rect width="1"/></svg>');
+    expect(out).toContain("rect{fill:#fff}");
+  });
+});

@@ -48,9 +48,18 @@ async function listPending(request, env) {
   // config whose assets_status is 'pending' has at least one assets row (the
   // share/update flow only ever sets assets_status to 'pending' when at
   // least one asset was queued), so the join never silently drops a config.
+  //
+  // This lists EVERY asset kind on the config (not just the pending ones) —
+  // a config can be in a mixed approved+pending state (an owner PUT can keep
+  // an already-approved kind untouched while adding/changing another), and
+  // the admin console needs the full picture to render "already approved"
+  // tiles alongside the ones still awaiting sanitization. Each item's
+  // per-asset `status` tells the console (and approveConfig below) which
+  // kinds are actually pending.
   const { results } = await env.DB.prepare(
     `SELECT c.id AS config_id, c.name, c.author, c.created_at,
-            a.kind AS asset_kind, a.sha256 AS asset_sha256, a.size AS asset_size
+            a.kind AS asset_kind, a.sha256 AS asset_sha256, a.size AS asset_size,
+            a.status AS asset_status
        FROM configs c
        JOIN assets a ON a.config_id = c.id
       WHERE c.assets_status = 'pending' AND c.status = 'active'
@@ -70,7 +79,12 @@ async function listPending(request, env) {
       };
       byConfig.set(row.config_id, entry);
     }
-    entry.assets.push({ kind: row.asset_kind, sha256: row.asset_sha256, size: row.asset_size });
+    entry.assets.push({
+      kind: row.asset_kind,
+      sha256: row.asset_sha256,
+      size: row.asset_size,
+      status: row.asset_status,
+    });
   }
 
   return jsonResponse({ items: [...byConfig.values()] });
@@ -83,14 +97,20 @@ async function listPending(request, env) {
 async function getPendingAsset(request, env, id, kind) {
   requireAdmin(request, env);
 
-  const row = await env.DB.prepare("SELECT 1 FROM assets WHERE config_id = ? AND kind = ?")
+  const row = await env.DB.prepare("SELECT status FROM assets WHERE config_id = ? AND kind = ?")
     .bind(id, kind)
     .first();
   if (!row) {
     throw new HttpError(404, "not_found", "Asset not found.");
   }
 
-  const object = await env.R2.get(r2Key("pending", id, kind));
+  // In a mixed approved+pending config (an owner PUT can leave one kind
+  // 'approved' while another is freshly 'pending'), an already-approved kind
+  // has no pending/ object left — it was deleted the moment it was first
+  // approved. Fall back to the approved/ bytes so the console can still
+  // preview it; only a kind with no assets row at all is a genuine 404.
+  const state = row.status === "approved" ? "approved" : "pending";
+  const object = await env.R2.get(r2Key(state, id, kind));
   if (!object) {
     throw new HttpError(404, "not_found", "Asset not found.");
   }
@@ -124,10 +144,20 @@ async function approveConfig(request, env, id) {
     throw new HttpError(409, "not_pending", "Config is not awaiting asset approval.");
   }
 
-  const { results: assetRows } = await env.DB.prepare("SELECT kind FROM assets WHERE config_id = ?")
+  // Approve operates on PENDING kinds only — a config can be in a mixed
+  // approved+pending state (owner PUT kept one kind's sha256 unchanged,
+  // which stays 'approved', while adding/changing another, which is fresh
+  // 'pending'). Demanding the body cover ALL of the config's asset kinds
+  // (including already-approved ones with no pending/ bytes left to fetch)
+  // made approval permanently impossible in that state. The exact-set
+  // invariant now applies to the pending subset only; already-approved rows
+  // are left completely untouched by this handler.
+  const { results: pendingAssetRows } = await env.DB.prepare(
+    "SELECT kind FROM assets WHERE config_id = ? AND status = 'pending'"
+  )
     .bind(id)
     .all();
-  const expectedKinds = new Set(assetRows.map((r) => r.kind));
+  const expectedKinds = new Set(pendingAssetRows.map((r) => r.kind));
 
   const contentLength = request.headers.get("content-length");
   if (contentLength !== null && Number(contentLength) > ADMIN_APPROVE_BODY_BYTES) {
@@ -156,14 +186,17 @@ async function approveConfig(request, env, id) {
     byKind.set(entry.kind, entry.data_b64);
   }
 
-  // The body must cover EXACTLY the config's asset kinds — no fewer (a
-  // missing kind would leave it un-sanitized forever, silently served as
-  // whatever the previous approved bytes were, or never approved at all)
-  // and no more (an extra kind has nowhere to go).
+  // The body must cover EXACTLY the config's PENDING asset kinds — no fewer
+  // (a missing pending kind would leave it un-sanitized forever, never
+  // approved at all) and no more (an already-approved kind has nowhere to
+  // go here — it's re-approved implicitly by being left alone; including it
+  // in the body is rejected the same way an unrelated extra kind would be,
+  // keeping the exact-set invariant simple for both the server and the
+  // console).
   const sameSize = byKind.size === expectedKinds.size;
   const coversAll = sameSize && [...expectedKinds].every((kind) => byKind.has(kind));
   if (!coversAll) {
-    throw new HttpError(400, "missing_asset", "Body must cover exactly the config's asset kinds.");
+    throw new HttpError(400, "missing_asset", "Body must cover exactly the config's pending asset kinds.");
   }
 
   const resolved = [];
@@ -205,12 +238,22 @@ async function approveConfig(request, env, id) {
         WHERE config_id = ? AND kind = ?`
     ).bind(asset.sha256, asset.size, r2Key("approved", id, asset.kind), id, asset.kind)
   );
-  statements.push(
-    env.DB.prepare("UPDATE configs SET assets_status = 'approved', updated_at = datetime('now') WHERE id = ?").bind(
-      id
-    )
-  );
   await env.DB.batch(statements);
+
+  // Recompute assets_status from what's actually left, the same way
+  // rejectConfig does, rather than assuming 'approved': the request body was
+  // required to cover the exact pending set above, so no row should still be
+  // 'pending' at this point — but recomputing (instead of hardcoding) means
+  // a config never gets stuck mismarked if that invariant is ever violated.
+  const stillPending = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM assets WHERE config_id = ? AND status = 'pending'"
+  )
+    .bind(id)
+    .first();
+  const newAssetsStatus = stillPending.n > 0 ? "pending" : "approved";
+  await env.DB.prepare("UPDATE configs SET assets_status = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(newAssetsStatus, id)
+    .run();
 
   // Pending R2 objects are only deleted after the D1 batch commits — deleting
   // first and then losing the batch would strand an assets row still marked

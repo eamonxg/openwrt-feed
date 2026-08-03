@@ -19,6 +19,32 @@ describe("worker integration", () => {
     });
   });
 
+  // Final-review Finding 2: a percent-encoded path segment that isn't valid
+  // UTF-8 (e.g. "%ff") makes router.js's decodeURIComponent throw a raw
+  // URIError. Before the fix that surfaced as an uncaught-exception 500 with
+  // no JSON body at all — every other error path in this Worker returns the
+  // standard {"error":{...}} envelope, so a malformed path shouldn't be an
+  // exception either.
+  it("GET /api/v1/themes/aurora/configs/%ff returns a 400 bad_request JSON envelope, not a raw throw", async () => {
+    const res = await SELF.fetch("https://example.com/api/v1/themes/aurora/configs/%ff");
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: { code: "bad_request", message: expect.any(String) },
+    });
+  });
+
+  it("GET /c/%ff returns a 400 bad_request JSON envelope, not a raw throw", async () => {
+    const res = await SELF.fetch("https://example.com/c/%ff");
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: { code: "bad_request", message: expect.any(String) },
+    });
+  });
+
   it("GET / falls through to static assets and returns 200 HTML", async () => {
     const res = await SELF.fetch("https://example.com/");
 

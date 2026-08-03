@@ -131,10 +131,12 @@ async function serveAsset(env, id, kind) {
   const headers = {
     "content-type": contentTypeFor(kind, sniffedJpeg),
     "cache-control": "public, max-age=604800, immutable",
+    // Every /assets/ response gets nosniff, not just SVG — it costs nothing
+    // and closes off MIME-sniffing surprises for any kind.
+    "x-content-type-options": "nosniff",
   };
   if (kind === "logo_svg") {
     headers["content-security-policy"] = "default-src 'none'";
-    headers["x-content-type-options"] = "nosniff";
   }
 
   return new Response(object.body, { headers });

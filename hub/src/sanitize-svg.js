@@ -383,6 +383,40 @@ function hasDisallowedUrl(text) {
   return false;
 }
 
+// <style> text can also reach the network via `@import url(...)` (or even
+// the bare `@import "https://...";` form, no url() wrapper at all) — a
+// non-local url(...) is already caught by hasDisallowedUrl above, but the
+// quoted form isn't, since it never contains the literal token "url(". This
+// is defense-in-depth (the asset is served with CSP default-src 'none' and
+// only ever rendered as an <img>, per contract #8), so a plain case-
+// insensitive substring match on the fixed ASCII token "@import" is enough —
+// deliberately not attempting the CSS-escaped form (`\40 import`, `\75rl(`
+// etc.), which is real CSS but not a realistic bypass here. Matched the same
+// character-by-character way as hasDisallowedUrl (never via a whole-string
+// .toLowerCase(), which the fix-round note above explains can desynchronize
+// indices for certain Unicode input) so there is no analogous risk here.
+function hasDisallowedAtImport(text) {
+  const token = "@import";
+  for (let i = 0; i + token.length <= text.length; i += 1) {
+    let match = true;
+    for (let j = 0; j < token.length; j += 1) {
+      const ch = text[i + j];
+      const want = token[j];
+      if (want === "@") {
+        if (ch !== "@") {
+          match = false;
+          break;
+        }
+      } else if (!isAsciiCi(ch, want, want.toUpperCase())) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Whitelist filtering
 // ---------------------------------------------------------------------------
@@ -422,7 +456,7 @@ function sanitizeElement(node) {
       .filter((c) => c.type === "text")
       .map((c) => c.value)
       .join("");
-    if (hasDisallowedUrl(combinedText)) {
+    if (hasDisallowedUrl(combinedText) || hasDisallowedAtImport(combinedText)) {
       children.length = 0; // empty the style content, per the brief
     }
   }

@@ -156,7 +156,22 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    const matched = router.dispatch(request, env);
+    // A percent-encoded path segment that isn't valid UTF-8 (e.g. GET
+    // /c/%ff) makes router.dispatch's decodeURIComponent throw a raw
+    // URIError synchronously, before any handler runs — left unguarded that
+    // surfaces as an uncaught-exception 500 with no JSON body at all rather
+    // than the standard {"error":{...}} envelope. Every other error path in
+    // this Worker already converts to that envelope, so this one is caught
+    // here and mapped to 400 bad_request the same way.
+    let matched;
+    try {
+      matched = router.dispatch(request, env);
+    } catch (err) {
+      if (err instanceof URIError) {
+        return errorResponse(400, "bad_request", "The request path is malformed.");
+      }
+      throw err;
+    }
     if (matched) return matched;
 
     if (url.pathname.startsWith("/api/")) {

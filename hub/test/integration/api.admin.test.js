@@ -147,8 +147,57 @@ describe("GET /api/v1/admin/pending", () => {
     const item1 = body.items.find((item) => item.config_id === pending1.id);
     expect(item1.name).toBe("Pending One");
     expect(item1.assets).toEqual([
-      { kind: "favicon_png", sha256: pending1.assets[0].manifest.sha256, size: pending1.assets[0].manifest.size },
+      {
+        kind: "favicon_png",
+        sha256: pending1.assets[0].manifest.sha256,
+        size: pending1.assets[0].manifest.size,
+        status: "pending",
+      },
     ]);
+  });
+
+  it("includes a per-asset status so a mixed approved+pending config's already-approved kinds are distinguishable", async () => {
+    const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const token = makeToken();
+
+    const { id } = await shareWithAssets({
+      token,
+      name: "Mixed",
+      assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }],
+      colorSeed: "#201001",
+    });
+    await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", data_b64: SVG_BASE64 }] }),
+    });
+
+    const icoBase64 = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]));
+    const logoAsset = await makeAsset("logo_svg", SVG_BASE64);
+    const icoAsset = await makeAsset("favicon_ico", icoBase64);
+    await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: token,
+        name: "Mixed",
+        payload: makePayload({
+          colors: { light_bg: "#201002" },
+          assets: [logoAsset.manifest, icoAsset.manifest],
+        }),
+        assets: [logoAsset.body, icoAsset.body],
+      }),
+    });
+
+    const res = await adminFetch("/api/v1/admin/pending");
+    const body = await res.json();
+    const item = body.items.find((i) => i.config_id === id);
+    expect(item.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "logo_svg", status: "approved" }),
+        expect.objectContaining({ kind: "favicon_ico", status: "pending" }),
+      ])
+    );
   });
 
   it("excludes a removed config even if its assets_status is still pending", async () => {
@@ -189,6 +238,27 @@ describe("GET /api/v1/admin/assets/:id/:kind", () => {
     const { id } = await shareWithAssets({ assetSpecs: [{ kind: "favicon_png" }], colorSeed: "#210002" });
     const res = await adminFetch(`/api/v1/admin/assets/${id}/logo_svg`);
     expect(res.status).toBe(404);
+  });
+
+  it("falls back to serving the approved/ bytes for a kind whose row is already 'approved' (no pending/ object left)", async () => {
+    const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const { id } = await shareWithAssets({ assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }], colorSeed: "#210003" });
+    await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", data_b64: SVG_BASE64 }] }),
+    });
+
+    // The pending/ object is gone the moment approval happens — confirm the
+    // premise before checking the fallback.
+    expect(await env.R2.get(`pending/${id}/logo_svg`)).toBeNull();
+
+    const res = await adminFetch(`/api/v1/admin/assets/${id}/logo_svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/svg+xml");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const text = await res.text();
+    expect(text).toBe(atob(SVG_BASE64));
   });
 });
 
@@ -313,6 +383,148 @@ describe("POST /api/v1/admin/configs/:id/approve", () => {
     });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: { code: "bad_asset", message: expect.any(String) } });
+  });
+
+  // -------------------------------------------------------------------------
+  // Final-review Finding 1: mixed approved+pending state must not deadlock
+  // approval. Full chain: share logo_svg -> admin approves it -> owner PUTs
+  // keeping logo_svg (same sha256, stays 'approved') and adds a brand new
+  // favicon_ico ('pending') -> admin approve with ONLY favicon_ico bytes
+  // must succeed even though logo_svg is untouched and has no pending/
+  // bytes left to submit.
+  // -------------------------------------------------------------------------
+
+  it("mixed approved+pending state: approve with only the pending kind's bytes succeeds; the already-approved kind is left untouched", async () => {
+    const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const token = makeToken();
+
+    const { id } = await shareWithAssets({
+      token,
+      name: "Mixed Approve",
+      assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }],
+      colorSeed: "#221001",
+    });
+    const firstApprove = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", data_b64: SVG_BASE64 }] }),
+    });
+    expect(firstApprove.status).toBe(200);
+    const approvedLogoAsset = await assetRow(id, "logo_svg");
+
+    // Owner PUT: keep logo_svg unchanged (identical sha256 -> stays
+    // 'approved') and add a brand new favicon_ico ('pending'). Overall
+    // assets_status recomputes to 'pending'.
+    const icoBase64 = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]));
+    const logoAsset = await makeAsset("logo_svg", SVG_BASE64);
+    const icoAsset = await makeAsset("favicon_ico", icoBase64);
+    expect(logoAsset.manifest.sha256).toBe(approvedLogoAsset.sha256);
+
+    const putRes = await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: token,
+        name: "Mixed Approve",
+        payload: makePayload({
+          colors: { light_bg: "#221002" },
+          assets: [logoAsset.manifest, icoAsset.manifest],
+        }),
+        assets: [logoAsset.body, icoAsset.body],
+      }),
+    });
+    expect(putRes.status).toBe(200);
+    expect((await configRow(id)).assets_status).toBe("pending");
+    expect((await assetRow(id, "logo_svg")).status).toBe("approved");
+    expect((await assetRow(id, "favicon_ico")).status).toBe("pending");
+
+    // Before the fix, approve demanded the body cover ALL kinds (including
+    // logo_svg, which has no pending/ bytes left) -> 400 missing_asset,
+    // deadlocking approval forever. After the fix, submitting ONLY the
+    // pending favicon_ico kind is exactly the required set -> 200.
+    const sanitizedIco = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x20, 0x20]));
+    const approveRes = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "favicon_ico", data_b64: sanitizedIco }] }),
+    });
+    expect(approveRes.status).toBe(200);
+    expect(await approveRes.json()).toEqual({ id, approved: true });
+
+    const finalConfig = await configRow(id);
+    expect(finalConfig.assets_status).toBe("approved");
+
+    // logo_svg: untouched by the second approve — same sha256/status as
+    // after the first approval — and still served.
+    const finalLogoAsset = await assetRow(id, "logo_svg");
+    expect(finalLogoAsset.status).toBe("approved");
+    expect(finalLogoAsset.sha256).toBe(approvedLogoAsset.sha256);
+    const logoRes = await SELF.fetch(`https://example.com/assets/${id}/logo_svg`);
+    expect(logoRes.status).toBe(200);
+    await logoRes.arrayBuffer();
+
+    // favicon_ico: freshly approved with the sanitized replacement bytes,
+    // and now served too.
+    const finalIcoAsset = await assetRow(id, "favicon_ico");
+    expect(finalIcoAsset.status).toBe("approved");
+    const icoRes = await SELF.fetch(`https://example.com/assets/${id}/favicon_ico`);
+    expect(icoRes.status).toBe(200);
+    expect(new Uint8Array(await icoRes.arrayBuffer())).toEqual(base64ToBytes(sanitizedIco));
+  });
+
+  it("400 missing_asset when the body includes an already-approved kind alongside the pending one (exact-set invariant)", async () => {
+    const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const token = makeToken();
+
+    const { id } = await shareWithAssets({
+      token,
+      name: "Mixed Reject Extra",
+      assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }],
+      colorSeed: "#221003",
+    });
+    await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", data_b64: SVG_BASE64 }] }),
+    });
+
+    const icoBase64 = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]));
+    const logoAsset = await makeAsset("logo_svg", SVG_BASE64);
+    const icoAsset = await makeAsset("favicon_ico", icoBase64);
+    await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: token,
+        name: "Mixed Reject Extra",
+        payload: makePayload({
+          colors: { light_bg: "#221004" },
+          assets: [logoAsset.manifest, icoAsset.manifest],
+        }),
+        assets: [logoAsset.body, icoAsset.body],
+      }),
+    });
+
+    // Including the already-approved logo_svg kind (an "extra" kind, since
+    // only favicon_ico is actually pending) is rejected the same way any
+    // other extra kind would be, keeping the exact-set invariant simple.
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        assets: [
+          { kind: "logo_svg", data_b64: SVG_BASE64 },
+          { kind: "favicon_ico", data_b64: icoBase64 },
+        ],
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: { code: "missing_asset", message: expect.any(String) } });
+
+    // Nothing mutated by the rejected request.
+    expect((await configRow(id)).assets_status).toBe("pending");
+    expect((await assetRow(id, "logo_svg")).status).toBe("approved");
+    expect((await assetRow(id, "favicon_ico")).status).toBe("pending");
   });
 
   it("409 not_pending for a config with no pending assets (assets_status 'none')", async () => {

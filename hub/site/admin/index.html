@@ -534,6 +534,40 @@ function hasDisallowedUrl(text) {
   return false;
 }
 
+// <style> text can also reach the network via `@import url(...)` (or even
+// the bare `@import "https://...";` form, no url() wrapper at all) — a
+// non-local url(...) is already caught by hasDisallowedUrl above, but the
+// quoted form isn't, since it never contains the literal token "url(". This
+// is defense-in-depth (the asset is served with CSP default-src 'none' and
+// only ever rendered as an <img>, per contract #8), so a plain case-
+// insensitive substring match on the fixed ASCII token "@import" is enough —
+// deliberately not attempting the CSS-escaped form (`\40 import`, `\75rl(`
+// etc.), which is real CSS but not a realistic bypass here. Matched the same
+// character-by-character way as hasDisallowedUrl (never via a whole-string
+// .toLowerCase(), which the fix-round note above explains can desynchronize
+// indices for certain Unicode input) so there is no analogous risk here.
+function hasDisallowedAtImport(text) {
+  const token = "@import";
+  for (let i = 0; i + token.length <= text.length; i += 1) {
+    let match = true;
+    for (let j = 0; j < token.length; j += 1) {
+      const ch = text[i + j];
+      const want = token[j];
+      if (want === "@") {
+        if (ch !== "@") {
+          match = false;
+          break;
+        }
+      } else if (!isAsciiCi(ch, want, want.toUpperCase())) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Whitelist filtering
 // ---------------------------------------------------------------------------
@@ -573,7 +607,7 @@ function sanitizeElement(node) {
       .filter((c) => c.type === "text")
       .map((c) => c.value)
       .join("");
-    if (hasDisallowedUrl(combinedText)) {
+    if (hasDisallowedUrl(combinedText) || hasDisallowedAtImport(combinedText)) {
       children.length = 0; // empty the style content, per the brief
     }
   }
@@ -756,6 +790,57 @@ async function fetchPendingAsset(configId, kind) {
   return { bytes: new Uint8Array(buf), contentType };
 }
 
+// Fetches an already-approved kind's live bytes purely for preview (mixed
+// approved+pending configs, final-review Finding 1) — no sanitization runs
+// on it, and it is never included in the approve POST body. #10 falls back
+// to serving the approved/ bytes for a kind whose row is already
+// 'approved' (its pending/ object was deleted the moment it was first
+// approved), so the same fetchPendingAsset call works for both cases.
+// Never throws — a failed preview fetch is shown inline, it never blocks
+// Approve (only the pending kinds gate that button).
+async function fetchApprovedPreview(configId, kind) {
+  try {
+    const fetched = await fetchPendingAsset(configId, kind);
+    return { ok: true, bytes: fetched.bytes, contentType: fetched.contentType };
+  } catch (err) {
+    return { ok: false, message: err.message || String(err) };
+  }
+}
+
+function renderAlreadyApprovedPreview(tile, kind, result) {
+  const preview = el("div", { class: "preview" });
+  tile.appendChild(preview);
+
+  if (!result.ok) {
+    const stateLine = el("div", { class: "state-error", text: "already approved (preview failed: " + result.message + ")" });
+    tile.appendChild(stateLine);
+    return;
+  }
+
+  const stateLine = el("div", { class: "state-ok", text: "already approved" });
+  tile.appendChild(stateLine);
+
+  const blob = new Blob([result.bytes], { type: result.contentType || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  if (result.contentType && result.contentType.indexOf("font/") === 0) {
+    fontSampleCounter += 1;
+    const family = "admin-preview-font-" + fontSampleCounter;
+    const sample = el("div", { class: "font-sample", text: "Aa 123" });
+    preview.appendChild(sample);
+    const face = new FontFace(family, "url(" + url + ")");
+    face
+      .load()
+      .then((loaded) => {
+        document.fonts.add(loaded);
+        sample.style.fontFamily = family;
+      })
+      .catch(() => {});
+  } else {
+    const img = el("img", { src: url, alt: kind });
+    preview.appendChild(img);
+  }
+}
+
 // Returns { ok: true, bytes, blob, previewKind } or { ok: false, message }.
 // Never throws — every failure path here is a sanitize failure the caller
 // surfaces on the card and uses to disable "Approve".
@@ -906,13 +991,33 @@ async function renderQueueCard(item) {
   const actions = el("div", { class: "card-actions" }, [approveBtn, rejectBtn, takedownBtn]);
   card.appendChild(actions);
 
+  // A config can be in a mixed approved+pending state (final-review Finding
+  // 1): an owner PUT can keep one kind's sha256 unchanged (stays
+  // 'approved') while adding/changing another (freshly 'pending'). Only the
+  // pending kinds get sanitized and go in the approve POST body — the
+  // server now rejects a body that includes an already-approved kind, and
+  // there is nothing to re-sanitize there anyway. Already-approved kinds
+  // are still fetched and shown, just as a plain "already approved"
+  // preview, via #10's fallback to serving the approved/ bytes.
+  const pendingAssets = item.assets.filter((a) => a.status !== "approved");
+
   const results = {};
   for (const asset of item.assets) {
     const tile = el("div", { class: "asset-tile" }, [el("span", { class: "kind", text: asset.kind })]);
-    const pendingLine = el("div", { class: "state-pending", text: "sanitizing…" });
-    tile.appendChild(pendingLine);
     grid.appendChild(tile);
 
+    if (asset.status === "approved") {
+      const pendingLine = el("div", { class: "state-pending", text: "loading preview…" });
+      tile.appendChild(pendingLine);
+      // eslint-disable-next-line no-await-in-loop
+      const preview = await fetchApprovedPreview(item.config_id, asset.kind);
+      tile.removeChild(pendingLine);
+      renderAlreadyApprovedPreview(tile, asset.kind, preview);
+      continue;
+    }
+
+    const pendingLine = el("div", { class: "state-pending", text: "sanitizing…" });
+    tile.appendChild(pendingLine);
     // eslint-disable-next-line no-await-in-loop
     const result = await sanitizeAsset(item.config_id, asset.kind);
     results[asset.kind] = result;
@@ -920,7 +1025,7 @@ async function renderQueueCard(item) {
     renderAssetPreview(tile, asset.kind, result);
   }
 
-  const allOk = item.assets.every((a) => results[a.kind] && results[a.kind].ok);
+  const allOk = pendingAssets.every((a) => results[a.kind] && results[a.kind].ok);
   approveBtn.disabled = !allOk;
 
   approveBtn.addEventListener("click", async () => {
@@ -928,7 +1033,7 @@ async function renderQueueCard(item) {
     approveBtn.disabled = true;
     try {
       const body = {
-        assets: item.assets.map((a) => ({
+        assets: pendingAssets.map((a) => ({
           kind: a.kind,
           data_b64: bytesToBase64(results[a.kind].bytes),
         })),

@@ -87,7 +87,7 @@ describe("GET /assets/:id/:kind", () => {
     expect(assets[0].manifest.kind).toBe("logo_svg");
   });
 
-  it("serves an approved favicon_png with image/png Content-Type and no CSP header", async () => {
+  it("serves an approved favicon_png with image/png Content-Type, nosniff, and no CSP header", async () => {
     const { id } = await shareWithAssets([{ kind: "favicon_png" }], "#100003");
     const bytes = base64ToBytes(PNG_1X1_BASE64);
     await approve(id, "favicon_png", bytes);
@@ -97,7 +97,9 @@ describe("GET /assets/:id/:kind", () => {
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(res.headers.get("cache-control")).toBe("public, max-age=604800, immutable");
     expect(res.headers.get("content-security-policy")).toBeNull();
-    expect(res.headers.get("x-content-type-options")).toBeNull();
+    // Final-review Finding 3: nosniff applies to every /assets/ response, not
+    // just logo_svg.
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     // Drain the R2-backed body stream fully — an unconsumed stream can leave
     // the isolated-storage snapshot for this test unable to pop cleanly (see
     // https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#isolated-storage).
