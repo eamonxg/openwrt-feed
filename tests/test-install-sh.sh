@@ -172,4 +172,40 @@ run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="auto" \
   FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-auto=2.0.0"
 refute_log "opkg install luci-i18n-aurora-config-auto"
 
+# --- accepting the offer points LuCI at the theme's static directory --------
+setup_sandbox opkg
+run_install $'1\n\ny\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg files luci-theme-aurora"
+assert_log "uci set luci.main.mediaurlbase=/luci-static/aurora"
+assert_log "uci commit luci"
+
+# --- declining leaves the configuration alone -------------------------------
+setup_sandbox opkg
+run_install $'1\n\ny\nn\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+refute_log "uci commit luci"
+
+# --- no theme installed, no offer -------------------------------------------
+setup_sandbox opkg
+run_install $'3\n\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-app-aurora-config"
+refute_log "uci commit luci"
+
+# --- the run order matches the printed list order ---------------------------
+# Pre-ticked packages seed the selection before any toggle appends to it, so
+# without an explicit re-order shadcn (#2) would be acted on before aurora (#1)
+# and the confirmation would contradict the list the user just read.
+setup_sandbox opkg
+run_install $'1\n\ny\nn\n' \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+order=$(grep -E '^opkg (install|upgrade) ' "$tmp/log" | tr '\n' '|')
+[ "$order" = "opkg install luci-theme-aurora|opkg upgrade luci-theme-shadcn|" ] \
+  || { echo "FAIL: run order does not match list order: $order"; fail=1; }
+
 exit "$fail"

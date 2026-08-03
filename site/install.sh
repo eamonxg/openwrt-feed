@@ -213,6 +213,53 @@ run_selection() {
   if [ -n "$bad" ]; then RC=1; else RC=0; fi
 }
 
+# ---------------------------------------------------------------- theme -----
+# The static directory comes from the package's own file list. The
+# luci-theme-<name> -> /luci-static/<name> mapping is a convention, not a
+# guarantee, so only fall back to it when the file list yields nothing.
+theme_dir() { # <pkg>
+  if [ "$PM" = apk ]; then
+    files=$(apk info -L "$1" 2>/dev/null || true)
+  else
+    files=$(opkg files "$1" 2>/dev/null || true)
+  fi
+  d=$(printf '%s\n' "$files" \
+      | sed -n 's|^/*www/luci-static/\([^/][^/]*\)/.*|\1|p' | head -1)
+  [ -n "$d" ] || d=${1#luci-theme-}
+  echo "$d"
+}
+
+offer_theme() {
+  themes=""
+  for p in $did_add $did_up; do
+    case "$p" in luci-theme-*) themes="$themes $p" ;; esac
+  done
+  [ -n "$themes" ] || return 0
+
+  set -- $themes
+  if [ $# -gt 1 ]; then
+    echo ""
+    echo "Installed themes:"
+    i=1
+    for t in $themes; do echo "  $i  $t"; i=$((i + 1)); done
+    printf 'Set one as the active LuCI theme? Enter a number, or Enter to skip: '
+    read -r reply <&3 || reply=""
+    case "$reply" in
+      ''|*[!0-9]*) return 0 ;;
+    esac
+    [ "$reply" -ge 1 ] && [ "$reply" -le $# ] || return 0
+    eval "pick=\${$reply}"
+  else
+    pick=$1
+    confirm "Set $pick as the active LuCI theme?" || return 0
+  fi
+
+  d=$(theme_dir "$pick")
+  uci set "luci.main.mediaurlbase=/luci-static/$d"
+  uci commit luci
+  echo "Active theme set to $pick (/luci-static/$d)."
+}
+
 # ----------------------------------------------------------------- menu -----
 is_sel() { case " $SEL " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
@@ -251,7 +298,15 @@ menu() {
     printf 'Toggle by number ("1 3"), "a" all, "n" none, "q" quit, Enter to confirm: '
     read -r reply <&3 || reply="q"
     case "$reply" in
-      "")  [ -n "$SEL" ] && return 0
+      "")  if [ -n "$SEL" ]; then
+             # Re-order to match the printed list. Pre-ticked packages seed SEL
+             # before any toggle appends, so without this the confirmation and
+             # the run order disagree with what the user just read.
+             ord=""
+             for p in $ALL; do is_sel "$p" && ord="$ord $p"; done
+             SEL=$ord
+             return 0
+           fi
            echo "Nothing selected."; continue ;;
       q|Q) return 1 ;;
       a|A) SEL=$ALL; continue ;;
@@ -322,7 +377,9 @@ elif have_tty; then
     for p in $SEL; do
       if is_installed "$p"; then echo "  $PM $UP $p"; else echo "  $PM $ADD $p"; fi
     done
-    if confirm "Proceed?"; then run_selection; else echo "Nothing done."; fi
+    # offer_theme is deliberately absent from the PKGS= path: that path exists
+    # for unattended runs, which must not rewrite the user's UCI configuration.
+    if confirm "Proceed?"; then run_selection; offer_theme; else echo "Nothing done."; fi
   else
     echo "Nothing done."
   fi
