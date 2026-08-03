@@ -115,6 +115,39 @@ in_feed() { # <pkg> — is the name known to any configured index?
   fi
 }
 
+# ------------------------------------------------------------- language ------
+# LuCI's configured language, or empty when unset or "auto".
+LUCI_LANG=$(uci -q get luci.main.lang 2>/dev/null || true)
+[ "$LUCI_LANG" = auto ] && LUCI_LANG=""
+
+lang_pkg_for() { # <pkg> — the matching i18n package name, or empty
+  [ -n "$LUCI_LANG" ] || return 0
+  case "$1" in
+    luci-app-*) ;;
+    *) return 0 ;;
+  esac
+  echo "luci-i18n-${1#luci-app-}-$LUCI_LANG"
+}
+
+# expand_langs — append each selected app's language pack to $SEL, but only if
+# the index actually carries it. A language the feed does not build is skipped
+# in silence; it must never take the main package down with it.
+#
+# in_feed consults every configured index, not only this feed, so a language
+# pack already available from the official repository is accepted. That is the
+# desired outcome — the user gets their translation either way.
+expand_langs() {
+  add=""
+  for p in $SEL; do
+    lp=$(lang_pkg_for "$p")
+    [ -n "$lp" ] || continue
+    in_feed "$lp" || continue
+    case " $SEL $add " in *" $lp "*) continue ;; esac
+    add="$add $lp"
+  done
+  SEL="$SEL$add"
+}
+
 # Field 2 of the state file carries two distinct facts and must not conflate
 # them: "-" means not installed, "?" means installed but the version string
 # could not be parsed. Storing empty for both would show an unparseable version
@@ -208,6 +241,10 @@ menu() {
       if is_sel "$p"; then m=x; else m=" "; fi
       printf '  %2d  [%s] %-28s %-10s %s\n' \
         "$i" "$m" "$p" "$(state_field "$p" 3)" "$(status_text "$p")"
+      lp=$(lang_pkg_for "$p")
+      if [ -n "$lp" ] && is_sel "$p" && in_feed "$lp"; then
+        printf '          + %s  (LuCI language)\n' "$lp"
+      fi
       i=$((i + 1))
     done
     echo ""
@@ -272,12 +309,14 @@ if [ -n "${PKGS+x}" ]; then
     echo "ERROR: not in this feed:$missing" >&2
     exit 1
   fi
+  expand_langs
   run_selection
 elif have_tty; then
   # Open fd 3 once. Redirecting each `read` from $TTY_DEV would rewind a
   # regular file to the start every time and spin forever.
   exec 3<"$TTY_DEV"
   if menu; then
+    expand_langs
     echo ""
     echo "Will run:"
     for p in $SEL; do

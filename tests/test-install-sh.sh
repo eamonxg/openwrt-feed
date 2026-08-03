@@ -151,4 +151,25 @@ assert_log "opkg install luci-theme-aurora"
 assert_log "opkg install luci-theme-shadcn"
 assert_log "opkg install luci-app-aurora-config"
 
+# --- the language pack follows the app package ------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="zh-cn" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-zh-cn=2.0.0"
+assert_log "opkg install luci-app-aurora-config"
+assert_log "opkg install luci-i18n-aurora-config-zh-cn"
+
+# --- a language the feed does not carry is skipped, main package unaffected --
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="eo" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: missing language pack must not fail the run"; echo "$out"; fail=1; }
+assert_log "opkg install luci-app-aurora-config"
+refute_log "opkg install luci-i18n-aurora-config-eo"
+
+# --- lang=auto means no language pack ---------------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="auto" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-auto=2.0.0"
+refute_log "opkg install luci-i18n-aurora-config-auto"
+
 exit "$fail"
