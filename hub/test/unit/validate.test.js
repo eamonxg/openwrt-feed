@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   validateMeta,
   validatePayload,
+  cleanText,
   COLOR_TOKENS,
   ASSET_KINDS,
   ASSET_SIZE_LIMITS,
@@ -51,6 +52,38 @@ describe("exported constants", () => {
       const expected = kind === "font_sans" || kind === "font_mono" ? 8388608 : 2097152;
       expect(ASSET_SIZE_LIMITS[kind]).toBe(expected);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanText — Global Constraint helper (strip control chars, NFC normalize),
+// shared by validateMeta/validatePayload internally and reused as-is by
+// configs.js for the report `reason` field.
+// ---------------------------------------------------------------------------
+
+describe("cleanText", () => {
+  const makeError = () => new HttpError(400, "test_error", "bad text");
+
+  it("strips control characters (U+0000-U+001F, U+007F)", () => {
+    expect(cleanText("abc", makeError)).toBe("abc");
+  });
+
+  it("NFC-normalizes decomposed text", () => {
+    const decomposed = "é"; // "e" + combining acute accent
+    expect(cleanText(decomposed, makeError)).toBe("é");
+    expect(cleanText(decomposed, makeError)).toBe(decomposed.normalize("NFC"));
+  });
+
+  it("passes through ordinary text unchanged", () => {
+    expect(cleanText("Hello, world!", makeError)).toBe("Hello, world!");
+  });
+
+  it("throws the caller-supplied error for a non-string value", () => {
+    expectHttpError(() => cleanText(123, makeError), 400, "test_error");
+  });
+
+  it("throws the caller-supplied error for undefined", () => {
+    expectHttpError(() => cleanText(undefined, makeError), 400, "test_error");
   });
 });
 

@@ -109,7 +109,7 @@ function badMeta(message = "Invalid metadata.") {
 // Text cleaning (Global Constraints: strip control chars, NFC normalize)
 // ---------------------------------------------------------------------------
 
-function cleanText(value, makeError) {
+export function cleanText(value, makeError) {
   if (typeof value !== "string") throw makeError();
   return value.replace(CONTROL_CHARS_PATTERN, "").normalize("NFC");
 }

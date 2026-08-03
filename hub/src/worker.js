@@ -1,5 +1,11 @@
 import { createRouter } from "./router.js";
-import { handleShare, handleListConfigs, handleConfigDetail } from "./configs.js";
+import {
+  handleShare,
+  handleListConfigs,
+  handleConfigDetail,
+  handleDownload,
+  handleReport,
+} from "./configs.js";
 import { handleAssetServe } from "./assets.js";
 import { jsonResponse, errorResponse, MAX_BODY_BYTES } from "./http.js";
 
@@ -46,6 +52,16 @@ router.add("POST", "/api/v1/themes/:theme/configs", async (request, env, params)
   }
 
   return handleShare(request, env, params);
+});
+
+router.add("POST", "/api/v1/themes/:theme/configs/:id/download", (request, env, params) => {
+  const rejected = requireAuroraTheme(params);
+  return rejected ?? handleDownload(request, env, params);
+});
+
+router.add("POST", "/api/v1/themes/:theme/configs/:id/report", (request, env, params) => {
+  const rejected = requireAuroraTheme(params);
+  return rejected ?? handleReport(request, env, params);
 });
 
 export default {

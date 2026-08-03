@@ -4,7 +4,7 @@
 
 import { HttpError, deviceFromToken, bumpQuota } from "./auth.js";
 import { shortId, canonicalJson, contentHash, sha256Hex } from "./ids.js";
-import { validateMeta, validatePayload } from "./validate.js";
+import { validateMeta, validatePayload, cleanText } from "./validate.js";
 import { MAGIC_CHECKS, r2Key, sniffLoginBgFormat } from "./assets.js";
 import { jsonResponse, errorResponse, readJsonBounded, MAX_BODY_BYTES } from "./http.js";
 
@@ -15,8 +15,8 @@ function todayUtc() {
 // Reads the body via the streaming-bounded reader (closes the chunked-body
 // bypass of worker.js's Content-Length fast path — see http.js) and confirms
 // the parsed JSON is a plain object before any field is read off it.
-async function parseJsonBody(request) {
-  const body = await readJsonBounded(request, MAX_BODY_BYTES);
+async function parseJsonBody(request, maxBytes = MAX_BODY_BYTES) {
+  const body = await readJsonBounded(request, maxBytes);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new HttpError(400, "bad_json", "Request body must be a JSON object.");
   }
@@ -110,6 +110,20 @@ async function findDuplicate(db, theme, hash) {
     .prepare("SELECT id FROM configs WHERE theme = ? AND content_hash = ? AND status = 'active'")
     .bind(theme, hash)
     .first();
+}
+
+// Shared existence check for #6/#7: config must exist, match theme, and be
+// 'active' (not 'removed') — anything else surfaces as a uniform 404
+// not_found, same as #2's detail lookup.
+async function requireActiveConfigId(db, theme, id) {
+  const row = await db
+    .prepare("SELECT id FROM configs WHERE theme = ? AND id = ? AND status = 'active'")
+    .bind(theme, id)
+    .first();
+  if (!row) {
+    throw new HttpError(404, "not_found", "Config not found.");
+  }
+  return row.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +357,109 @@ export async function handleListConfigs(request, env, params) {
 export async function handleConfigDetail(request, env, params) {
   try {
     return await getConfigDetail(env, params.theme, params.id);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// #6 POST /themes/:theme/configs/:id/download
+// #7 POST /themes/:theme/configs/:id/report
+//
+// Both bodies are tiny ({device_hash} / {reason}), so a small streaming cap
+// is plenty and keeps a malicious huge body from being buffered at all.
+// ---------------------------------------------------------------------------
+
+const SMALL_BODY_BYTES = 4096;
+const DEVICE_HASH_PATTERN = /^[a-f0-9]{64}$/;
+const REPORT_REASON_MAX = 200;
+const REPORT_DAILY_LIMIT = 20;
+
+async function downloadConfig(request, env, theme, id) {
+  const body = await parseJsonBody(request, SMALL_BODY_BYTES);
+  if (typeof body.device_hash !== "string" || !DEVICE_HASH_PATTERN.test(body.device_hash)) {
+    throw new HttpError(400, "bad_device_hash", "device_hash must be a 64-character lowercase hex string.");
+  }
+
+  await requireActiveConfigId(env.DB, theme, id);
+
+  // INSERT OR IGNORE + a change-count read replaces a SELECT-then-INSERT
+  // dedup check with a single round trip. NOTE: this is intentionally NOT
+  // atomic with the downloads+1 UPDATE below — D1/SQLite has no
+  // `RETURNING`-with-branch primitive that folds both into one statement,
+  // and batch() can't branch on an earlier statement's result mid-batch.
+  // A crash between the two statements loses at most one download count;
+  // acceptable at this scale, called out explicitly per the task brief.
+  const insertResult = await env.DB
+    .prepare("INSERT OR IGNORE INTO dl_dedup (config_id, device_hash) VALUES (?, ?)")
+    .bind(id, body.device_hash)
+    .run();
+
+  const counted = insertResult.meta.changes === 1;
+  if (counted) {
+    await env.DB.prepare("UPDATE configs SET downloads = downloads + 1 WHERE id = ?").bind(id).run();
+  }
+
+  return jsonResponse({ counted });
+}
+
+async function reportConfig(request, env, theme, id) {
+  const body = await parseJsonBody(request, SMALL_BODY_BYTES);
+  if (typeof body.reason !== "string") {
+    throw new HttpError(400, "bad_reason", "reason is required.");
+  }
+  const reason = cleanText(body.reason, () => new HttpError(400, "bad_reason", "reason is invalid."));
+  if (reason.length < 1 || reason.length > REPORT_REASON_MAX) {
+    throw new HttpError(400, "bad_reason", "reason must be 1-200 characters.");
+  }
+
+  await requireActiveConfigId(env.DB, theme, id);
+
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const day = todayUtc();
+
+  // Single upsert-and-read: increments (or creates) today's per-IP report
+  // counter and hands back the resulting count in one round trip.
+  const counter = await env.DB
+    .prepare(
+      `INSERT INTO ip_counters (ip, bucket, day, count) VALUES (?, 'report', ?, 1)
+         ON CONFLICT(ip, bucket, day) DO UPDATE SET count = count + 1
+         RETURNING count`
+    )
+    .bind(ip, day)
+    .first();
+
+  if (counter.count > REPORT_DAILY_LIMIT) {
+    throw new HttpError(429, "rate_limited", "Too many reports from this IP today.");
+  }
+
+  await env.DB
+    .prepare("INSERT INTO reports (config_id, reason, ip) VALUES (?, ?, ?)")
+    .bind(id, reason, ip)
+    .run();
+
+  return jsonResponse({ ok: true });
+}
+
+export async function handleDownload(request, env, params) {
+  try {
+    return await downloadConfig(request, env, params.theme, params.id);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+export async function handleReport(request, env, params) {
+  try {
+    return await reportConfig(request, env, params.theme, params.id);
   } catch (err) {
     if (err instanceof HttpError) {
       return errorResponse(err.status, err.code, err.message);
