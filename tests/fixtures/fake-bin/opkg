@@ -1,0 +1,32 @@
+#!/bin/sh
+# Fake opkg. Reads FAKE_* env vars; logs every call to $FAKE_LOG.
+echo "opkg $*" >> "$FAKE_LOG"
+lookup() { # <pkg> <pairs>   -> version or empty
+  for kv in $2; do
+    case "$kv" in "$1="*) echo "${kv#*=}"; return 0 ;; esac
+  done
+  return 1
+}
+has() { # <pkg> <list>
+  for n in $2; do [ "$n" = "$1" ] && return 0; done
+  return 1
+}
+cmd=$1; shift
+case "$cmd" in
+  update) echo "Updated list of available packages."; exit 0 ;;
+  list-installed)
+    has "$1" "$FAKE_INSTALLED" || exit 0
+    echo "$1 - $(lookup "$1" "$FAKE_INSTALLED_VER" || echo 0.0.0)"; exit 0 ;;
+  list)
+    v=$(lookup "$1" "$FAKE_AVAIL") || exit 0
+    echo "$1 - $v - A fake package"; exit 0 ;;
+  files)
+    echo "Package $1 is installed on root and has the following files:"
+    echo "/www/luci-static/${1#luci-theme-}/cascade.css"; exit 0 ;;
+  install|upgrade)
+    for p in "$@"; do
+      if has "$p" "$FAKE_FAIL"; then echo "opkg: $p failed" >&2; exit 1; fi
+      echo "Configuring $p."
+    done; exit 0 ;;
+esac
+exit 0
