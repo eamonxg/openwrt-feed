@@ -80,4 +80,41 @@ assert_out "installed 1.0.1"
 assert_log "opkg list-installed luci-theme-shadcn"
 assert_log "opkg list luci-theme-aurora"
 
+# --- PKGS= picks the verb per package ---------------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-aurora luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3"
+[ "$rc" = 0 ] || { echo "FAIL: PKGS run exited $rc"; echo "$out"; fail=1; }
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg upgrade luci-theme-shadcn"
+refute_log "opkg install luci-theme-shadcn"
+
+# --- same split on apk ------------------------------------------------------
+setup_sandbox apk
+run_install "" YES=1 PKGS="luci-theme-aurora luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3"
+assert_log "apk add luci-theme-aurora"
+assert_log "apk upgrade luci-theme-shadcn"
+
+# --- an unknown name in PKGS is an error, and nothing is installed -----------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-nope" FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" != 0 ] || { echo "FAIL: unknown PKGS name should exit non-zero"; fail=1; }
+assert_out "not in this feed"
+refute_log "opkg install luci-theme-nope"
+
+# --- one failing package does not abandon the rest --------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-aurora luci-app-aurora-config" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-app-aurora-config=2.0.0" \
+  FAKE_FAIL="luci-theme-aurora"
+[ "$rc" != 0 ] || { echo "FAIL: a failed package should make the run exit non-zero"; fail=1; }
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg install luci-app-aurora-config"
+assert_out "Failed:"
+
 exit "$fail"

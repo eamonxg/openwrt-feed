@@ -144,6 +144,42 @@ status_text() { # <pkg>
 
 probe_all
 
+# -------------------------------------------------------------- executing ---
+confirm() { # <prompt> — auto-yes under YES=, otherwise read one line from fd 3
+  [ -z "${YES:-}" ] || return 0
+  printf '%s [Y/n] ' "$1"
+  read -r reply <&3 || reply=""
+  case "$reply" in n*|N*) return 1 ;; *) return 0 ;; esac
+}
+
+# run_selection — install or upgrade every name in $SEL, one at a time.
+# Each call is guarded by `if`, which suspends `set -e`: a package that fails
+# must not abandon the ones behind it. Installing three packages and then dying
+# without a word is worse than reporting the one that broke.
+#
+# The summary has no "already up to date" bucket on purpose: whether an upgrade
+# was a no-op is the package manager's statement, printed just above, not a
+# conclusion this script draws.
+run_selection() {
+  did_add="" did_up="" bad=""
+  for p in $SEL; do
+    if is_installed "$p"; then verb=$UP; else verb=$ADD; fi
+    echo ""
+    echo "==> $PM $verb $p"
+    if "$PM" "$verb" "$p"; then
+      if [ "$verb" = "$UP" ]; then did_up="$did_up $p"; else did_add="$did_add $p"; fi
+    else
+      bad="$bad $p"
+    fi
+  done
+  echo ""
+  echo "Summary:"
+  [ -z "$did_add" ] || echo "  Installed:$did_add"
+  [ -z "$did_up" ]  || echo "  Upgraded:$did_up"
+  [ -z "$bad" ]     || echo "  Failed:$bad"
+  if [ -n "$bad" ]; then RC=1; else RC=0; fi
+}
+
 print_only() {
   echo ""
   echo "Feed installed (channel: $CHANNEL). Available packages:"
@@ -167,8 +203,23 @@ have_tty() {
   (exec 3<"$TTY_DEV") 2>/dev/null
 }
 
-if have_tty; then
+RC=0
+
+if [ -n "${PKGS+x}" ]; then
+  SEL=""
+  missing=""
+  for p in $PKGS; do
+    if in_feed "$p"; then SEL="$SEL $p"; else missing="$missing $p"; fi
+  done
+  if [ -n "$missing" ]; then
+    echo "ERROR: not in this feed:$missing" >&2
+    exit 1
+  fi
+  run_selection
+elif have_tty; then
   print_only
 else
   print_only
 fi
+
+exit "$RC"
