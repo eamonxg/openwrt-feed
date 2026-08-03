@@ -17,7 +17,10 @@ case "$cmd" in
   info)
     case "$1" in
       -e) has "$2" "$FAKE_INSTALLED" && echo "$2"; exit 0 ;;
-      -L) echo "$2-1.0 contains:"; echo "www/luci-static/${2#luci-theme-}/cascade.css"; exit 0 ;;
+      -L) echo "$2-1.0 contains:"
+          # apk sorts "resources" ahead of the theme's own directory.
+          echo "www/luci-static/resources/menu-${2#luci-theme-}.js"
+          echo "www/luci-static/${2#luci-theme-}/cascade.css"; exit 0 ;;
     esac; exit 0 ;;
   list)
     if [ "$1" = "-I" ]; then

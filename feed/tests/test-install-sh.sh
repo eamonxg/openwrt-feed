@@ -117,11 +117,13 @@ assert_log "opkg install luci-theme-aurora"
 assert_log "opkg install luci-app-aurora-config"
 assert_out "Failed:"
 
-# --- toggling by number, then Enter, installs exactly the ticked packages ----
-# Fixture: shadcn is installed, so it starts ticked. "1" ticks aurora as well,
-# Enter confirms the list, "y" answers the Proceed prompt.
+# --- toggling by number goes straight to the confirmation --------------------
+# Fixture: shadcn is installed, so it starts ticked. "1" ticks aurora as well
+# and ends the menu — the toggle prompt must not come back under an answer the
+# user has already given. "y" answers Proceed, the last line skips the theme
+# offer (two themes were touched, so that prompt takes a number).
 setup_sandbox opkg
-run_install $'1\n\ny\n' \
+run_install $'1\ny\n\n' \
   FAKE_INSTALLED="luci-theme-shadcn" \
   FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
@@ -143,9 +145,9 @@ run_install $'zzz\n9\nn\nq\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
 [ "$rc" = 0 ] || { echo "FAIL: reprompt run exited $rc"; echo "$out"; fail=1; }
 assert_out "not a choice"
 
-# --- "a" ticks everything ---------------------------------------------------
+# --- "a" ticks everything and redraws, so Enter is still needed to confirm ---
 setup_sandbox opkg
-run_install $'a\n\ny\n' \
+run_install $'a\n\ny\n\n' \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
 assert_log "opkg install luci-theme-aurora"
 assert_log "opkg install luci-theme-shadcn"
@@ -173,34 +175,69 @@ run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="auto" \
 refute_log "opkg install luci-i18n-aurora-config-auto"
 
 # --- accepting the offer points LuCI at the theme's static directory --------
+# The fixture file list opens with /www/luci-static/resources/, exactly as a
+# real theme package does. That directory is LuCI's shared asset store, not a
+# theme: pointing mediaurlbase at it leaves LuCI rendering the previous theme
+# with no error anywhere, so the theme's own directory must win.
 setup_sandbox opkg
-run_install $'1\n\ny\ny\n' \
+run_install $'1\ny\ny\n' \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
 assert_log "opkg install luci-theme-aurora"
 assert_log "opkg files luci-theme-aurora"
 assert_log "uci set luci.main.mediaurlbase=/luci-static/aurora"
+refute_log "uci set luci.main.mediaurlbase=/luci-static/resources"
 assert_log "uci commit luci"
+
+# --- same on apk, where "resources" sorts first in the file listing ----------
+setup_sandbox apk
+run_install $'1\ny\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "uci set luci.main.mediaurlbase=/luci-static/aurora"
+refute_log "uci set luci.main.mediaurlbase=/luci-static/resources"
 
 # --- declining leaves the configuration alone -------------------------------
 setup_sandbox opkg
-run_install $'1\n\ny\nn\n' \
+run_install $'1\ny\nn\n' \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
 assert_log "opkg install luci-theme-aurora"
 refute_log "uci commit luci"
 
 # --- no theme installed, no offer -------------------------------------------
 setup_sandbox opkg
-run_install $'3\n\ny\n' \
+run_install $'3\ny\n' \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
 assert_log "opkg install luci-app-aurora-config"
 refute_log "uci commit luci"
+
+# --- "b" reopens the menu on the selection already made ---------------------
+# "1" ticks aurora and lands on the confirmation, "b" goes back — aurora must
+# still be ticked there — "3" adds the app, "y" runs, "n" declines the theme.
+setup_sandbox opkg
+run_install $'1\nb\n3\ny\nn\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: back-and-forth run exited $rc"; echo "$out"; fail=1; }
+[ "$(grep -c 'luci-theme-aurora' <<<"$out")" -ge 2 ] \
+  || { echo "FAIL: menu was not reprinted after \"b\""; echo "$out"; fail=1; }
+assert_out "[x] luci-theme-aurora"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg install luci-app-aurora-config"
+
+# --- going back does not accumulate language packs --------------------------
+# expand_langs runs before the confirmation, so "b" must restore the ticks
+# rather than the expanded list; otherwise the pack reappears as a hand-made
+# choice and, on a second pass, more than once.
+setup_sandbox opkg
+run_install $'3\nb\n\ny\n' FAKE_LANG="zh-cn" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-zh-cn=2.0.0 luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3"
+[ "$(grep -c '^opkg install luci-i18n-aurora-config-zh-cn$' "$tmp/log")" = 1 ] \
+  || { echo "FAIL: language pack installed more than once"; cat "$tmp/log"; fail=1; }
 
 # --- the run order matches the printed list order ---------------------------
 # Pre-ticked packages seed the selection before any toggle appends to it, so
 # without an explicit re-order shadcn (#2) would be acted on before aurora (#1)
 # and the confirmation would contradict the list the user just read.
 setup_sandbox opkg
-run_install $'1\n\ny\nn\n' \
+run_install $'1\ny\nn\n' \
   FAKE_INSTALLED="luci-theme-shadcn" \
   FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"

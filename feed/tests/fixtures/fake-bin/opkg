@@ -22,6 +22,9 @@ case "$cmd" in
     echo "$1 - $v - A fake package"; exit 0 ;;
   files)
     echo "Package $1 is installed on root and has the following files:"
+    # Real theme packages also drop files into LuCI's shared asset directory,
+    # and those come out ahead of the theme's own directory in the listing.
+    echo "/www/luci-static/resources/menu-${1#luci-theme-}.js"
     echo "/www/luci-static/${1#luci-theme-}/cascade.css"; exit 0 ;;
   install|upgrade)
     for p in "$@"; do

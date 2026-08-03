@@ -214,18 +214,34 @@ run_selection() {
 }
 
 # ---------------------------------------------------------------- theme -----
-# The static directory comes from the package's own file list. The
-# luci-theme-<name> -> /luci-static/<name> mapping is a convention, not a
-# guarantee, so only fall back to it when the file list yields nothing.
+# The static directory comes from the package's own file list, with two rules
+# that the naive "first /www/luci-static/<dir> wins" reading gets wrong:
+#
+#   - "resources" is LuCI's *shared* asset directory, not a theme. Themes
+#     routinely drop a file or two in there (menu overrides, extra JS), and it
+#     sorts ahead of the theme's own directory in an apk listing. Picking it
+#     points mediaurlbase at a directory holding no theme at all, which LuCI
+#     never reports — it just goes on rendering whatever was active before.
+#   - among what is left, prefer the luci-theme-<name> -> /luci-static/<name>
+#     convention over whichever directory merely happens to come first.
+#
+# The convention is only the tie-break and the last-resort fallback, so a
+# package that names its directory something else is still honoured.
 theme_dir() { # <pkg>
+  want=${1#luci-theme-}
   if [ "$PM" = apk ]; then
     files=$(apk info -L "$1" 2>/dev/null || true)
   else
     files=$(opkg files "$1" 2>/dev/null || true)
   fi
   d=$(printf '%s\n' "$files" \
-      | sed -n 's|^/*www/luci-static/\([^/][^/]*\)/.*|\1|p' | head -1)
-  [ -n "$d" ] || d=${1#luci-theme-}
+      | sed -n 's|^/*www/luci-static/\([^/][^/]*\)/.*|\1|p' \
+      | awk -v want="$want" '
+          $0 == "resources" { next }
+          $0 == want        { found = 1; exit }
+          !first            { first = $0 }
+          END               { print (found ? want : first) }')
+  [ -n "$d" ] || d=$want
   echo "$d"
 }
 
@@ -273,15 +289,29 @@ toggle() { # <pkg>
   fi
 }
 
+# order_sel — re-order SEL to match the printed list. Pre-ticked packages seed
+# SEL before any toggle appends, so without this the confirmation and the run
+# order disagree with what the user just read.
+order_sel() {
+  ord=""
+  for p in $ALL; do is_sel "$p" && ord="$ord $p"; done
+  SEL=$ord
+}
+
 # menu — reprint-on-change checkbox list. No stty, no ANSI: this must work
 # under BusyBox and any SSH client, and a Ctrl-C must never leave the user's
 # terminal in a state the script has to undo.
+#
+# A valid toggle ends the menu rather than redrawing it. Redrawing put the same
+# prompt back underneath an answer the user had just given, which reads as if
+# the answer had not registered; reviewing the choice belongs on the
+# confirmation screen, which can send the user straight back here. "a" and "n"
+# still redraw, because seeing what a bulk change selected is their whole point.
+#
+# SEL belongs to the caller, not to this function: coming back from the
+# confirmation screen must reopen the menu on the selection already made.
 menu() {
-  SEL=""
-  for p in $ALL; do
-    is_installed "$p" && SEL="$SEL $p"      # already-installed start ticked:
-  done                                      # a re-run upgrades what you have
-  while :; do                               # and pulls in nothing new
+  while :; do
     echo ""
     i=1
     for p in $ALL; do
@@ -298,15 +328,7 @@ menu() {
     printf 'Toggle by number ("1 3"), "a" all, "n" none, "q" quit, Enter to confirm: '
     read -r reply <&3 || reply="q"
     case "$reply" in
-      "")  if [ -n "$SEL" ]; then
-             # Re-order to match the printed list. Pre-ticked packages seed SEL
-             # before any toggle appends, so without this the confirmation and
-             # the run order disagree with what the user just read.
-             ord=""
-             for p in $ALL; do is_sel "$p" && ord="$ord $p"; done
-             SEL=$ord
-             return 0
-           fi
+      "")  if [ -n "$SEL" ]; then order_sel; return 0; fi
            echo "Nothing selected."; continue ;;
       q|Q) return 1 ;;
       a|A) SEL=$ALL; continue ;;
@@ -325,7 +347,11 @@ menu() {
         bad="$bad $n"
       fi
     done
-    [ -z "$bad" ] || echo "not a choice:$bad"
+    # Anything unparseable means the line did not land the way it was typed, so
+    # redraw and let the user see where they actually are before moving on.
+    if [ -n "$bad" ]; then echo "not a choice:$bad"; continue; fi
+    if [ -n "$SEL" ]; then order_sel; return 0; fi
+    echo "Nothing selected."
   done
 }
 
@@ -370,19 +396,42 @@ elif have_tty; then
   # Open fd 3 once. Redirecting each `read` from $TTY_DEV would rewind a
   # regular file to the start every time and spin forever.
   exec 3<"$TTY_DEV"
-  if menu; then
-    expand_langs
-    echo ""
-    echo "Will run:"
-    for p in $SEL; do
-      if is_installed "$p"; then echo "  $PM $UP $p"; else echo "  $PM $ADD $p"; fi
-    done
-    # offer_theme is deliberately absent from the PKGS= path: that path exists
-    # for unattended runs, which must not rewrite the user's UCI configuration.
-    if confirm "Proceed?"; then run_selection; offer_theme; else echo "Nothing done."; fi
-  else
-    echo "Nothing done."
-  fi
+  SEL=""
+  for p in $ALL; do
+    is_installed "$p" && SEL="$SEL $p"      # already-installed start ticked:
+  done                                      # a re-run upgrades what you have
+                                            # and pulls in nothing new
+  while :; do
+    if menu; then
+      # $picked is what the user actually ticked. SEL grows language packs just
+      # below, and "back" has to restore the ticks rather than the expanded
+      # list — otherwise the packs pile up and come back as hand-made choices.
+      picked=$SEL
+      expand_langs
+      echo ""
+      echo "Will run:"
+      for p in $SEL; do
+        if is_installed "$p"; then echo "  $PM $UP $p"; else echo "  $PM $ADD $p"; fi
+      done
+      if [ -n "${YES:-}" ]; then
+        reply=y
+      else
+        printf 'Proceed? [Y/n], or "b" to change the selection: '
+        read -r reply <&3 || reply=""
+      fi
+      case "$reply" in
+        b|B)   SEL=$picked; continue ;;
+        n*|N*) echo "Nothing done." ;;
+        # offer_theme is deliberately absent from the PKGS= path: that path
+        # exists for unattended runs, which must not rewrite the user's UCI
+        # configuration.
+        *)     run_selection; offer_theme ;;
+      esac
+    else
+      echo "Nothing done."
+    fi
+    break
+  done
 else
   print_only
 fi
