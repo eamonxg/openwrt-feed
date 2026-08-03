@@ -1,22 +1,6 @@
 import { createRouter } from "./router.js";
 import { handleShare } from "./configs.js";
-
-function jsonResponse(data, init = {}) {
-  return new Response(JSON.stringify(data), {
-    ...init,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      ...(init.headers ?? {}),
-    },
-  });
-}
-
-function errorResponse(status, code, message) {
-  return jsonResponse({ error: { code, message } }, { status });
-}
-
-// Global Constraint: request bodies are capped at 12 MB.
-const MAX_BODY_BYTES = 12 * 1024 * 1024;
+import { jsonResponse, errorResponse, MAX_BODY_BYTES } from "./http.js";
 
 const router = createRouter();
 

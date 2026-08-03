@@ -7,65 +7,7 @@ import {
   ASSET_SIZE_LIMITS,
 } from "../../src/validate.js";
 import { HttpError } from "../../src/auth.js";
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function buildColors() {
-  const colors = {};
-  for (const token of COLOR_TOKENS) {
-    colors[`light_${token}`] = "#1a2b3c";
-    colors[`dark_${token}`] = "#4d5e6f";
-  }
-  return colors;
-}
-
-function buildLayout() {
-  return {
-    nav_type: "mega-menu",
-    struct_spacing: "0.25rem",
-    struct_radius_base: "0.5rem",
-    struct_content_width_centered: "80rem",
-    toolbar_enabled: "1",
-  };
-}
-
-function buildTypography() {
-  return {
-    font_sans: "system",
-    font_mono: "jetbrains-mono",
-    struct_font_sans: "Inter, sans-serif",
-    struct_font_mono: "'Fira Code', monospace",
-  };
-}
-
-function buildToolbar() {
-  return [
-    { title: "Docs", url: "https://example.com/docs", icon: "book.svg", enabled: "1" },
-    { title: "Home", url: "/", enabled: "0" },
-  ];
-}
-
-function buildAssets() {
-  return [
-    { kind: "logo_svg", sha256: "a".repeat(64), size: 1024 },
-    { kind: "font_sans", sha256: "b".repeat(64), size: 8388608 },
-  ];
-}
-
-function buildPayload(overrides = {}) {
-  return {
-    schema: 1,
-    theme: "aurora",
-    colors: buildColors(),
-    layout: buildLayout(),
-    typography: buildTypography(),
-    toolbar: buildToolbar(),
-    assets: buildAssets(),
-    ...overrides,
-  };
-}
+import { buildColors, buildLayout, buildTypography, buildPayload } from "../helpers.js";
 
 function expectHttpError(fn, status, code) {
   try {

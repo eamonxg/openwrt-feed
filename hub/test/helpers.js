@@ -31,7 +31,12 @@ export async function makeAsset(kind, base64 = PNG_1X1_BASE64) {
   };
 }
 
-function buildColors(overrides = {}) {
+// The single source of truth for default section fixtures — shared by
+// `makePayload` (nested-merge convenience, for integration tests that just
+// need a distinct valid payload) and `buildPayload` (shallow top-level
+// override, for validate.test.js's section-by-section schema exercising).
+// Called with no arguments, each returns the same fixed default section.
+export function buildColors(overrides = {}) {
   const colors = {};
   for (const token of COLOR_TOKENS) {
     colors[`light_${token}`] = "#1a2b3c";
@@ -40,7 +45,7 @@ function buildColors(overrides = {}) {
   return { ...colors, ...overrides };
 }
 
-function buildLayout(overrides = {}) {
+export function buildLayout(overrides = {}) {
   return {
     nav_type: "mega-menu",
     struct_spacing: "0.25rem",
@@ -51,7 +56,7 @@ function buildLayout(overrides = {}) {
   };
 }
 
-function buildTypography(overrides = {}) {
+export function buildTypography(overrides = {}) {
   return {
     font_sans: "system",
     font_mono: "jetbrains-mono",
@@ -59,6 +64,20 @@ function buildTypography(overrides = {}) {
     struct_font_mono: "'Fira Code', monospace",
     ...overrides,
   };
+}
+
+function buildToolbar() {
+  return [
+    { title: "Docs", url: "https://example.com/docs", icon: "book.svg", enabled: "1" },
+    { title: "Home", url: "/", enabled: "0" },
+  ];
+}
+
+function buildAssets() {
+  return [
+    { kind: "logo_svg", sha256: "a".repeat(64), size: 1024 },
+    { kind: "font_sans", sha256: "b".repeat(64), size: 8388608 },
+  ];
 }
 
 // A minimal valid schema-v1 aurora payload. Pass partial overrides for
@@ -73,5 +92,23 @@ export function makePayload(overrides = {}) {
     typography: buildTypography(overrides.typography),
     toolbar: overrides.toolbar ?? [],
     assets: overrides.assets ?? [],
+  };
+}
+
+// A "rich" default payload (non-empty toolbar/assets) with old-style shallow
+// top-level overrides — e.g. `buildPayload({ colors: null })` replaces the
+// whole `colors` key rather than merging into it. This is validate.test.js's
+// fixture shape: it exercises "what happens when a whole section is the
+// wrong shape/absent/null", which needs full replacement, not a merge.
+export function buildPayload(overrides = {}) {
+  return {
+    schema: 1,
+    theme: "aurora",
+    colors: buildColors(),
+    layout: buildLayout(),
+    typography: buildTypography(),
+    toolbar: buildToolbar(),
+    assets: buildAssets(),
+    ...overrides,
   };
 }

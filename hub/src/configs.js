@@ -6,34 +6,19 @@ import { HttpError, deviceFromToken, bumpQuota } from "./auth.js";
 import { shortId, canonicalJson, contentHash, sha256Hex } from "./ids.js";
 import { validateMeta, validatePayload } from "./validate.js";
 import { MAGIC_CHECKS, r2Key, sniffLoginBgFormat } from "./assets.js";
-
-function jsonResponse(data, init = {}) {
-  return new Response(JSON.stringify(data), {
-    ...init,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      ...(init.headers ?? {}),
-    },
-  });
-}
-
-function errorResponse(status, code, message) {
-  return jsonResponse({ error: { code, message } }, { status });
-}
+import { jsonResponse, errorResponse, readJsonBounded, MAX_BODY_BYTES } from "./http.js";
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Reads the body via the streaming-bounded reader (closes the chunked-body
+// bypass of worker.js's Content-Length fast path — see http.js) and confirms
+// the parsed JSON is a plain object before any field is read off it.
 async function parseJsonBody(request) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    throw new HttpError(400, "bad_request", "Request body must be valid JSON.");
-  }
+  const body = await readJsonBounded(request, MAX_BODY_BYTES);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new HttpError(400, "bad_request", "Request body must be a JSON object.");
+    throw new HttpError(400, "bad_json", "Request body must be a JSON object.");
   }
   return body;
 }

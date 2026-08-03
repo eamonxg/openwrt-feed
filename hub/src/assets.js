@@ -39,13 +39,12 @@ function isWoff2(bytes) {
 function isSvg(bytes) {
   let text;
   try {
+    // TextDecoder strips a leading UTF-8 BOM by default (ignoreBOM: false),
+    // so only leading whitespace needs handling here before the opening tag.
     text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   } catch {
     return false;
   }
-  // Strip an optional UTF-8 BOM (decoded as U+FEFF) and leading whitespace
-  // before looking at the opening tag.
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   text = text.replace(/^\s+/, "");
   return text.startsWith("<svg") || text.startsWith("<?xml");
 }

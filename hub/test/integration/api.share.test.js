@@ -35,6 +35,47 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     expect(body).toEqual({ error: { code: "too_large", message: expect.any(String) } });
   });
 
+  it("a chunked body with no Content-Length that exceeds the cap is still rejected with 413 (streaming reader)", async () => {
+    const chunkSize = 1024 * 1024; // 1 MiB
+    const totalChunks = 13; // 13 MiB total, over the 12 MiB cap
+    const stream = new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < totalChunks; i++) {
+          controller.enqueue(new Uint8Array(chunkSize));
+        }
+        controller.close();
+      },
+    });
+
+    const res = await SELF.fetch(SHARE_URL, { method: "POST", body: stream, duplex: "half" });
+
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body).toEqual({ error: { code: "too_large", message: expect.any(String) } });
+  });
+
+  it("a small chunked body with no Content-Length parses normally: 201", async () => {
+    const token = makeToken();
+    const json = JSON.stringify({
+      device_token: token,
+      name: "Streamed",
+      payload: makePayload({ colors: { light_bg: "#000004" } }),
+    });
+    const bytes = new TextEncoder().encode(json);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+
+    const res = await SELF.fetch(SHARE_URL, { method: "POST", body: stream, duplex: "half" });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toEqual({ id: expect.any(String), manage: true });
+  });
+
   it("shares a config with no assets: 201, D1 row, assets_status='none'", async () => {
     const token = makeToken();
     const res = await shareRequest({
