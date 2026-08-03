@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        # Site-only changes (site/index.html, site/assets/**) belong in mode=snapshots, not
+        # Site-only changes (feed/site/index.html, feed/site/assets/**) belong in mode=snapshots, not
         # full: every deploy re-renders the whole site anyway, while full would rebuild the
         # releases channel too — and apk packages are not byte-reproducible, so that rewrites
         # every .apk and devices holding the current index hit checksum mismatches until they
@@ -58,7 +58,7 @@ jobs:
       - name: Resolve refs
         id: refs
         run: |
-          list=$(scripts/resolve-refs.sh packages.json "${{ matrix.channel }}")
+          list=$(feed/scripts/resolve-refs.sh feed/packages.json "${{ matrix.channel }}")
           echo "resolved: $list"
           echo "list=$list" >> "$GITHUB_OUTPUT"
 
@@ -71,7 +71,7 @@ jobs:
           sdk_version: ${{ matrix.pkg_type == 'ipk' && env.SDK_OPKG || env.SDK_APK }}
           build_list: ${{ steps.refs.outputs.list }}
           out_dir: dist/${{ matrix.channel }}/${{ matrix.fmt }}
-          usign_pub: ${{ matrix.pkg_type == 'ipk' && 'keys/eamonxg.pub' || '' }}
+          usign_pub: ${{ matrix.pkg_type == 'ipk' && 'feed/keys/eamonxg.pub' || '' }}
 
       - uses: actions/upload-artifact@v6
         with:
@@ -119,13 +119,13 @@ jobs:
       - name: Assemble site
         run: |
           set -euo pipefail
-          cp keys/eamonxg.pub keys/eamonxg.pem dist/
-          FPR=$(scripts/usign-fpr.sh keys/eamonxg.pub)
-          APK_FPR="SHA256:$(openssl pkey -pubin -in keys/eamonxg.pem -outform DER \
+          cp feed/keys/eamonxg.pub feed/keys/eamonxg.pem dist/
+          FPR=$(feed/scripts/usign-fpr.sh feed/keys/eamonxg.pub)
+          APK_FPR="SHA256:$(openssl pkey -pubin -in feed/keys/eamonxg.pem -outform DER \
             | openssl dgst -sha256 -binary | openssl base64)"
-          scripts/gen-manifest.sh dist /tmp/carried.txt /tmp/live-manifest.json
-          scripts/render-site.sh site dist "${{ vars.FEED_HOST }}" "$FPR" "$APK_FPR"
-          sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" wrangler.template.jsonc > wrangler.jsonc
+          feed/scripts/gen-manifest.sh dist /tmp/carried.txt /tmp/live-manifest.json
+          feed/scripts/render-site.sh feed/site dist "${{ vars.FEED_HOST }}" "$FPR" "$APK_FPR"
+          sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" feed/wrangler.template.jsonc > wrangler.jsonc
           echo "== dist =="; find dist -type f | sort
 
       - name: Verify manifest against dist (spec §12.6)

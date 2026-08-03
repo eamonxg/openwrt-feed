@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Render wrangler config
-        run: sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" wrangler.template.jsonc > wrangler.jsonc
+        run: sed "s/__FEED_HOST__/${{ vars.FEED_HOST }}/g" feed/wrangler.template.jsonc > wrangler.jsonc
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
