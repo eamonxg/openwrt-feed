@@ -180,6 +180,63 @@ run_selection() {
   if [ -n "$bad" ]; then RC=1; else RC=0; fi
 }
 
+# ----------------------------------------------------------------- menu -----
+is_sel() { case " $SEL " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+toggle() { # <pkg>
+  if is_sel "$1"; then
+    new=""
+    for q in $SEL; do [ "$q" = "$1" ] || new="$new $q"; done
+    SEL=$new
+  else
+    SEL="$SEL $1"
+  fi
+}
+
+# menu — reprint-on-change checkbox list. No stty, no ANSI: this must work
+# under BusyBox and any SSH client, and a Ctrl-C must never leave the user's
+# terminal in a state the script has to undo.
+menu() {
+  SEL=""
+  for p in $ALL; do
+    is_installed "$p" && SEL="$SEL $p"      # already-installed start ticked:
+  done                                      # a re-run upgrades what you have
+  while :; do                               # and pulls in nothing new
+    echo ""
+    i=1
+    for p in $ALL; do
+      if is_sel "$p"; then m=x; else m=" "; fi
+      printf '  %2d  [%s] %-28s %-10s %s\n' \
+        "$i" "$m" "$p" "$(state_field "$p" 3)" "$(status_text "$p")"
+      i=$((i + 1))
+    done
+    echo ""
+    printf 'Toggle by number ("1 3"), "a" all, "n" none, "q" quit, Enter to confirm: '
+    read -r reply <&3 || reply="q"
+    case "$reply" in
+      "")  [ -n "$SEL" ] && return 0
+           echo "Nothing selected."; continue ;;
+      q|Q) return 1 ;;
+      a|A) SEL=$ALL; continue ;;
+      n|N) SEL=""; continue ;;
+    esac
+    bad=""
+    for n in $reply; do
+      case "$n" in
+        ''|*[!0-9]*) bad="$bad $n"; continue ;;
+      esac
+      set -- $ALL
+      if [ "$n" -ge 1 ] && [ "$n" -le $# ]; then
+        eval "pick=\${$n}"
+        toggle "$pick"
+      else
+        bad="$bad $n"
+      fi
+    done
+    [ -z "$bad" ] || echo "not a choice:$bad"
+  done
+}
+
 print_only() {
   echo ""
   echo "Feed installed (channel: $CHANNEL). Available packages:"
@@ -217,7 +274,19 @@ if [ -n "${PKGS+x}" ]; then
   fi
   run_selection
 elif have_tty; then
-  print_only
+  # Open fd 3 once. Redirecting each `read` from $TTY_DEV would rewind a
+  # regular file to the start every time and spin forever.
+  exec 3<"$TTY_DEV"
+  if menu; then
+    echo ""
+    echo "Will run:"
+    for p in $SEL; do
+      if is_installed "$p"; then echo "  $PM $UP $p"; else echo "  $PM $ADD $p"; fi
+    done
+    if confirm "Proceed?"; then run_selection; else echo "Nothing done."; fi
+  else
+    echo "Nothing done."
+  fi
 else
   print_only
 fi

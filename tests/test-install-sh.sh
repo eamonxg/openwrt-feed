@@ -117,4 +117,38 @@ assert_log "opkg install luci-theme-aurora"
 assert_log "opkg install luci-app-aurora-config"
 assert_out "Failed:"
 
+# --- toggling by number, then Enter, installs exactly the ticked packages ----
+# Fixture: shadcn is installed, so it starts ticked. "1" ticks aurora as well,
+# Enter confirms the list, "y" answers the Proceed prompt.
+setup_sandbox opkg
+run_install $'1\n\ny\n' \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: menu run exited $rc"; echo "$out"; fail=1; }
+assert_out "[x] luci-theme-shadcn"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg upgrade luci-theme-shadcn"
+refute_log "opkg install luci-app-aurora-config"
+
+# --- "q" quits without touching anything ------------------------------------
+setup_sandbox opkg
+run_install $'q\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" = 0 ] || { echo "FAIL: quit should exit 0"; fail=1; }
+refute_log "opkg install luci-theme-aurora"
+
+# --- invalid input reprompts instead of exiting -----------------------------
+setup_sandbox opkg
+run_install $'zzz\n9\nn\nq\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" = 0 ] || { echo "FAIL: reprompt run exited $rc"; echo "$out"; fail=1; }
+assert_out "not a choice"
+
+# --- "a" ticks everything ---------------------------------------------------
+setup_sandbox opkg
+run_install $'a\n\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg install luci-theme-shadcn"
+assert_log "opkg install luci-app-aurora-config"
+
 exit "$fail"
