@@ -302,11 +302,12 @@ order_sel() {
 # under BusyBox and any SSH client, and a Ctrl-C must never leave the user's
 # terminal in a state the script has to undo.
 #
-# A valid toggle ends the menu rather than redrawing it. Redrawing put the same
-# prompt back underneath an answer the user had just given, which reads as if
-# the answer had not registered; reviewing the choice belongs on the
-# confirmation screen, which can send the user straight back here. "a" and "n"
-# still redraw, because seeing what a bulk change selected is their whole point.
+# Any answer that leaves a usable selection ends the menu rather than redrawing
+# it. Redrawing put the same prompt back underneath an answer the user had just
+# given, which reads as if the answer had not registered; reviewing the choice
+# belongs on the confirmation screen, which can send the user straight back
+# here. Only "n" redraws, and only because an empty selection is the one answer
+# there is nothing to confirm.
 #
 # SEL belongs to the caller, not to this function: coming back from the
 # confirmation screen must reopen the menu on the selection already made.
@@ -331,8 +332,8 @@ menu() {
       "")  if [ -n "$SEL" ]; then order_sel; return 0; fi
            echo "Nothing selected."; continue ;;
       q|Q) return 1 ;;
-      a|A) SEL=$ALL; continue ;;
-      n|N) SEL=""; continue ;;
+      a|A) SEL=$ALL; return 0 ;;
+      n|N) SEL=""; echo "Nothing selected."; continue ;;
     esac
     bad=""
     for n in $reply; do

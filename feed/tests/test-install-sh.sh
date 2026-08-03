@@ -145,13 +145,27 @@ run_install $'zzz\n9\nn\nq\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
 [ "$rc" = 0 ] || { echo "FAIL: reprompt run exited $rc"; echo "$out"; fail=1; }
 assert_out "not a choice"
 
-# --- "a" ticks everything and redraws, so Enter is still needed to confirm ---
+# --- "a" ticks everything and confirms straight away ------------------------
+# "a" leaves a usable selection, so like a toggle it must not put the same
+# prompt back up; "y" answers Proceed and the last line skips the theme offer.
 setup_sandbox opkg
-run_install $'a\n\ny\n\n' \
+run_install $'a\ny\n\n' \
   FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
 assert_log "opkg install luci-theme-aurora"
 assert_log "opkg install luci-theme-shadcn"
 assert_log "opkg install luci-app-aurora-config"
+[ "$(grep -c 'Toggle by number' <<<"$out")" = 1 ] \
+  || { echo "FAIL: \"a\" reprinted the toggle prompt"; echo "$out"; fail=1; }
+
+# --- "n" is the one answer that has to redraw -------------------------------
+# An empty selection has nothing to confirm, so the menu stays put and says so.
+setup_sandbox opkg
+run_install $'n\nq\n' \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: \"n\" then quit exited $rc"; echo "$out"; fail=1; }
+assert_out "Nothing selected."
+refute_log "opkg upgrade luci-theme-shadcn"
 
 # --- the language pack follows the app package ------------------------------
 setup_sandbox opkg
