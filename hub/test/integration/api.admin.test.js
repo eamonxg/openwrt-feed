@@ -375,6 +375,78 @@ describe("POST /api/v1/admin/configs/:id/reject", () => {
     expect(listBody.items.map((i) => i.id)).toContain(id);
   });
 
+  it("mixed pending+approved state: reject drops only the pending kind, leaves the approved kind live", async () => {
+    const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    const token = makeToken();
+
+    // 1. Share with just logo_svg, then admin-approve it (reusing the same
+    // bytes as the "sanitized" replacement, for simplicity).
+    const { id } = await shareWithAssets({
+      token,
+      assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }],
+      colorSeed: "#270001",
+    });
+    const approveRes = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", data_b64: SVG_BASE64 }] }),
+    });
+    expect(approveRes.status).toBe(200);
+    const approvedAsset = await assetRow(id, "logo_svg");
+    expect(approvedAsset.status).toBe("approved");
+
+    // 2. Owner PUT: keep logo_svg unchanged (identical sha256 to the approved
+    // row, so updateConfig's diff treats it as "kept") and add a brand new
+    // favicon_ico. This produces the mixed state: logo_svg stays 'approved',
+    // favicon_ico is freshly 'pending', and the config's overall
+    // assets_status recomputes to 'pending' because anything is pending.
+    const icoBase64 = bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]));
+    const logoAsset = await makeAsset("logo_svg", SVG_BASE64);
+    const icoAsset = await makeAsset("favicon_ico", icoBase64);
+    expect(logoAsset.manifest.sha256).toBe(approvedAsset.sha256);
+
+    const putRes = await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: token,
+        name: "Mixed State",
+        payload: makePayload({
+          colors: { light_bg: "#270002" },
+          assets: [logoAsset.manifest, icoAsset.manifest],
+        }),
+        assets: [logoAsset.body, icoAsset.body],
+      }),
+    });
+    expect(putRes.status).toBe(200);
+
+    const midConfig = await configRow(id);
+    expect(midConfig.assets_status).toBe("pending");
+    expect((await assetRow(id, "logo_svg")).status).toBe("approved");
+    expect((await assetRow(id, "favicon_ico")).status).toBe("pending");
+
+    // 3. Admin reject: only the pending favicon_ico kind should be dropped —
+    // the already-approved logo_svg row/object must survive untouched.
+    const rejectRes = await adminFetch(`/api/v1/admin/configs/${id}/reject`, { method: "POST" });
+    expect(rejectRes.status).toBe(200);
+    expect(await rejectRes.json()).toEqual({ id, rejected: true });
+
+    const afterConfig = await configRow(id);
+    expect(afterConfig.assets_status).toBe("approved");
+
+    expect((await assetRow(id, "logo_svg")).status).toBe("approved");
+    expect(await assetRow(id, "favicon_ico")).toBeNull();
+
+    expect(await env.R2.get(`pending/${id}/favicon_ico`)).toBeNull();
+    const stillApprovedObject = await env.R2.get(`approved/${id}/logo_svg`);
+    expect(stillApprovedObject).not.toBeNull();
+    await stillApprovedObject.arrayBuffer();
+
+    const publicRes = await SELF.fetch(`https://example.com/assets/${id}/logo_svg`);
+    expect(publicRes.status).toBe(200);
+    await publicRes.arrayBuffer();
+  });
+
   it("409 not_pending for a config that is not currently pending", async () => {
     const res0 = await SELF.fetch(SHARE_URL, {
       method: "POST",
@@ -443,10 +515,27 @@ describe("POST /api/v1/admin/configs/:id/takedown", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/v1/admin/devices/:device_id/ban", () => {
-  it("bans the device, removes all its active configs, and blocks future shares", async () => {
+  it("bans the device, removes all its active configs (both R2 states gone), and blocks future shares", async () => {
     const token = makeToken();
-    const { id: idA } = await shareWithAssets({ token, name: "A", colorSeed: "#250001" });
-    const { id: idB } = await shareWithAssets({ token, name: "B", colorSeed: "#250002" });
+    // idA gets an approved asset (so the cascade's approved/ cleanup is
+    // exercised too); idB is left with a still-pending one.
+    const { id: idA } = await shareWithAssets({
+      token,
+      name: "A",
+      assetSpecs: [{ kind: "favicon_png" }],
+      colorSeed: "#250001",
+    });
+    await adminFetch(`/api/v1/admin/configs/${idA}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "favicon_png", data_b64: SANITIZED_PNG_BASE64 }] }),
+    });
+    const { id: idB } = await shareWithAssets({
+      token,
+      name: "B",
+      assetSpecs: [{ kind: "favicon_ico", base64: bytesToBase64(new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00])) }],
+      colorSeed: "#250002",
+    });
 
     const deviceId = (await configRow(idA)).device_id;
 
@@ -459,6 +548,11 @@ describe("POST /api/v1/admin/devices/:device_id/ban", () => {
 
     expect((await configRow(idA)).status).toBe("removed");
     expect((await configRow(idB)).status).toBe("removed");
+
+    expect(await env.R2.get(`approved/${idA}/favicon_png`)).toBeNull();
+    expect(await env.R2.get(`pending/${idA}/favicon_png`)).toBeNull();
+    expect(await env.R2.get(`approved/${idB}/favicon_ico`)).toBeNull();
+    expect(await env.R2.get(`pending/${idB}/favicon_ico`)).toBeNull();
 
     const listRes = await SELF.fetch("https://example.com/api/v1/themes/aurora/configs?sort=new");
     const listIds = (await listRes.json()).items.map((i) => i.id);

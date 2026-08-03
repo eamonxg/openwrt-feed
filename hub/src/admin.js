@@ -238,20 +238,35 @@ async function rejectConfig(request, env, id) {
     throw new HttpError(409, "not_pending", "Config is not awaiting asset approval.");
   }
 
-  const { results: assetRows } = await env.DB.prepare("SELECT kind FROM assets WHERE config_id = ?")
+  // Only the *pending* kinds are rejected. A config's assets_status is
+  // 'pending' as a whole even when some of its kinds are already 'approved'
+  // (Task 8's update flow keeps an unchanged, previously-approved asset
+  // as-is while marking only the changed/new kinds 'pending') — rejecting
+  // must never delete an already-approved row or its public approved/
+  // object out from under it. Only the pending rows/objects are ever
+  // touched here.
+  const { results: pendingRows } = await env.DB.prepare(
+    "SELECT kind FROM assets WHERE config_id = ? AND status = 'pending'"
+  )
     .bind(id)
     .all();
 
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM assets WHERE config_id = ?").bind(id),
-    env.DB.prepare("UPDATE configs SET assets_status = 'rejected', updated_at = datetime('now') WHERE id = ?").bind(
-      id
-    ),
-  ]);
+  await env.DB.prepare("DELETE FROM assets WHERE config_id = ? AND status = 'pending'").bind(id).run();
 
-  for (const row of assetRows) {
+  for (const row of pendingRows) {
     await env.R2.delete(r2Key("pending", id, row.kind));
   }
+
+  // Recompute assets_status from what's left: any remaining row must be
+  // 'approved' (the pending ones were just deleted above), so a non-empty
+  // remainder means the config still has approved assets -> 'approved'.
+  // Nothing left at all -> 'rejected'.
+  const remaining = await env.DB.prepare("SELECT COUNT(*) AS n FROM assets WHERE config_id = ?").bind(id).first();
+  const newStatus = remaining.n > 0 ? "approved" : "rejected";
+
+  await env.DB.prepare("UPDATE configs SET assets_status = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(newStatus, id)
+    .run();
 
   return jsonResponse({ id, rejected: true });
 }
