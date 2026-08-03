@@ -21,6 +21,15 @@ export function timingSafeEqual(a, b) {
 }
 
 export function requireAdmin(request, env) {
+  // Deferred minor from Task 3: a missing/empty ADMIN_TOKEN binding must
+  // never fall through to timingSafeEqual (an empty expected value would
+  // make an empty-or-missing Bearer token compare "equal" in some engines'
+  // string semantics). Fail closed with a distinct 500 before any comparison
+  // happens, so a misconfigured deployment can't accidentally admit anyone.
+  if (!env.ADMIN_TOKEN) {
+    throw new HttpError(500, "admin_disabled", "Admin token is not configured.");
+  }
+
   const header = request.headers.get("Authorization") ?? "";
   const [scheme, token] = header.split(" ");
   if (scheme !== "Bearer" || !token || !timingSafeEqual(token, env.ADMIN_TOKEN)) {

@@ -64,6 +64,28 @@ describe("requireAdmin", () => {
       HttpError
     );
   });
+
+  it("throws HttpError(500, admin_disabled) when env.ADMIN_TOKEN is missing, before comparing", () => {
+    try {
+      requireAdmin(req({ Authorization: "Bearer supersecret" }), {});
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect(err.status).toBe(500);
+      expect(err.code).toBe("admin_disabled");
+    }
+  });
+
+  it("throws HttpError(500, admin_disabled) when env.ADMIN_TOKEN is an empty string", () => {
+    try {
+      requireAdmin(req({ Authorization: "Bearer " }), { ADMIN_TOKEN: "" });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect(err.status).toBe(500);
+      expect(err.code).toBe("admin_disabled");
+    }
+  });
 });
 
 describe("deviceFromToken", () => {

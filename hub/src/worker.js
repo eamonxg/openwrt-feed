@@ -9,6 +9,16 @@ import {
   handleReport,
 } from "./configs.js";
 import { handleAssetServe } from "./assets.js";
+import {
+  handlePendingList,
+  handlePendingAsset,
+  handleApprove,
+  handleReject,
+  handleTakedown,
+  handleBanDevice,
+  handleReportsList,
+  handleResolveReport,
+} from "./admin.js";
 import { jsonResponse, errorResponse, MAX_BODY_BYTES } from "./http.js";
 
 const router = createRouter();
@@ -90,6 +100,18 @@ router.add("POST", "/api/v1/themes/:theme/configs/:id/report", (request, env, pa
   const rejected = requireAuroraTheme(params);
   return rejected ?? handleReport(request, env, params);
 });
+
+// #9-#15 — admin/moderation API. Every handler in admin.js calls
+// requireAdmin(request, env) as its first step, so no separate gate is
+// needed here in the router table.
+router.add("GET", "/api/v1/admin/pending", handlePendingList);
+router.add("GET", "/api/v1/admin/assets/:id/:kind", handlePendingAsset);
+router.add("POST", "/api/v1/admin/configs/:id/approve", handleApprove);
+router.add("POST", "/api/v1/admin/configs/:id/reject", handleReject);
+router.add("POST", "/api/v1/admin/configs/:id/takedown", handleTakedown);
+router.add("POST", "/api/v1/admin/devices/:device_id/ban", handleBanDevice);
+router.add("GET", "/api/v1/admin/reports", handleReportsList);
+router.add("POST", "/api/v1/admin/reports/:rid/resolve", handleResolveReport);
 
 export default {
   async fetch(request, env) {
