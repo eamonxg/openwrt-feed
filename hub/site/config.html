@@ -80,8 +80,9 @@
   main { max-width: 900px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
 
   h1#config-name { font-size: 1.5rem; margin: 0 0 0.25rem; word-break: break-word; }
-  #config-meta { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 2rem; }
+  #config-meta { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 0.75rem; }
   #config-meta span + span::before { content: " · "; }
+  #config-description { font-size: 0.95rem; margin: 0 0 2rem; word-break: break-word; white-space: pre-wrap; }
 
   section.block { margin-bottom: 2rem; }
   section.block h2 {
@@ -178,6 +179,7 @@
       <span class="config-downloads"></span>
       <span class="config-created"></span>
     </p>
+    <p id="config-description" hidden></p>
 
     <section class="block">
       <h2 data-i18n="section_palette">Color palette</h2>
@@ -496,6 +498,15 @@ function renderDetail(data) {
   document.querySelector(".config-downloads").textContent = String(downloads) + t("downloads_suffix");
 
   document.querySelector(".config-created").textContent = data.created_at || "";
+
+  // description is the author-supplied blurb collected at share time (API
+  // contract #2). It's plain user text — rendered via textContent like every
+  // other user-derived field, never innerHTML — and the whole paragraph is
+  // hidden rather than shown empty when there's nothing to say.
+  const descriptionEl = document.getElementById("config-description");
+  const description = typeof data.description === "string" ? data.description : "";
+  descriptionEl.textContent = description;
+  descriptionEl.hidden = description.length === 0;
 
   const payload = data.payload || {};
   renderPalette(payload.colors || {});

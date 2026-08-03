@@ -58,16 +58,37 @@ describe("Global Constraints — zero external references", () => {
   // brief calls out). Neither page uses inline SVG with an xmlns attribute,
   // so in practice no match should ever survive the exemption filter below —
   // this is a belt-and-suspenders scan, not a loophole.
+  //
+  // Fix-round 1 (security review): the original scan only matched literal
+  // "http://"/"https://" and missed protocol-relative "//host" references
+  // (e.g. src="//cdn.example/x.js" or url(//cdn.example/x.png)) — a browser
+  // resolves those against whatever scheme the page itself is served over,
+  // so they're just as external as a fully-qualified URL. Both are now
+  // scanned for.
   function findExternalRefs(html) {
     const matches = [];
-    const re = /https?:\/\/[^\s"'<>]*/g;
+
+    const absoluteRe = /https?:\/\/[^\s"'<>]*/g;
     let m;
-    while ((m = re.exec(html)) !== null) {
+    while ((m = absoluteRe.exec(html)) !== null) {
       const start = Math.max(0, m.index - 10);
       const context = html.slice(start, m.index);
       if (/xmlns\s*=\s*["']$/.test(context)) continue;
       matches.push(m[0]);
     }
+
+    // src="//..." / href="//..." — protocol-relative attribute values.
+    const protoRelativeAttrRe = /\b(?:src|href)\s*=\s*["']\/\/[^"']*/gi;
+    while ((m = protoRelativeAttrRe.exec(html)) !== null) {
+      matches.push(m[0]);
+    }
+
+    // url(//...) — protocol-relative CSS references (quoted or bare).
+    const protoRelativeUrlRe = /url\(\s*["']?\/\/[^)'"]*/gi;
+    while ((m = protoRelativeUrlRe.exec(html)) !== null) {
+      matches.push(m[0]);
+    }
+
     return matches;
   }
 
