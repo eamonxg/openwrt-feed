@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aurora Themes Hub — Config</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7fa;
+    --panel: #ffffff;
+    --panel-2: #eef0f4;
+    --border: #dfe2e8;
+    --text: #1b1e27;
+    --text-muted: #666e7d;
+    --accent: #3b6fe0;
+    --danger: #c02f2f;
+    --danger-bg: #fbe9e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1c1f26;
+      --panel-2: #232733;
+      --border: #333846;
+      --text: #e6e8ee;
+      --text-muted: #9aa1b1;
+      --accent: #5b8cff;
+      --danger: #ff5c5c;
+      --danger-bg: #3a1f22;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7fa; --panel: #ffffff; --panel-2: #eef0f4; --border: #dfe2e8;
+    --text: #1b1e27; --text-muted: #666e7d; --accent: #3b6fe0;
+    --danger: #c02f2f; --danger-bg: #fbe9e9;
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161a; --panel: #1c1f26; --panel-2: #232733; --border: #333846;
+    --text: #e6e8ee; --text-muted: #9aa1b1; --accent: #5b8cff;
+    --danger: #ff5c5c; --danger-bg: #3a1f22;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  a { color: var(--accent); }
+
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header.top a.back { text-decoration: none; font-weight: 600; font-size: 0.95rem; }
+  .controls { display: flex; align-items: center; gap: 0.5rem; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    padding: 0.45rem 0.85rem;
+  }
+  button:hover { border-color: var(--accent); }
+
+  main { max-width: 900px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+
+  h1#config-name { font-size: 1.5rem; margin: 0 0 0.25rem; word-break: break-word; }
+  #config-meta { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 2rem; }
+  #config-meta span + span::before { content: " · "; }
+
+  section.block { margin-bottom: 2rem; }
+  section.block h2 {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+    margin: 0 0 0.9rem;
+  }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table th, table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+  table th { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; }
+
+  .color-cell { display: flex; align-items: center; gap: 0.5rem; }
+  .color-cell .swatch {
+    width: 18px; height: 18px; border-radius: 0.3rem; flex: 0 0 auto;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+  }
+
+  .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+  .asset-tile {
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    padding: 0.6rem;
+    background: var(--panel);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+  .asset-tile .preview {
+    display: flex; align-items: center; justify-content: center;
+    height: 72px;
+    background: repeating-conic-gradient(var(--panel-2) 0% 25%, var(--panel) 0% 50%) 50% / 16px 16px;
+    border-radius: 0.4rem;
+    overflow: hidden;
+    margin-bottom: 0.4rem;
+  }
+  .asset-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .asset-tile .kind { display: block; color: var(--text-muted); word-break: break-word; }
+
+  ol.howto { padding-left: 1.2rem; margin: 0; }
+  ol.howto li { margin-bottom: 0.6rem; }
+  .howto-name { font-weight: 600; }
+
+  footer.site-footer {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.25rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .empty, .error { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+  .error { color: var(--danger); }
+  .empty h2, .error p { margin: 0 0 0.75rem; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="back" href="/" data-i18n="back_to_gallery">← Back to gallery</a>
+  <div class="controls">
+    <button id="lang-toggle" type="button">中文</button>
+    <button id="theme-toggle" type="button" aria-label="Toggle dark mode">🌗</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading-state" class="empty">
+    <p data-i18n="loading">Loading…</p>
+  </div>
+
+  <div id="not-found-state" class="empty" hidden>
+    <h2 data-i18n="not_found_title">Theme not found</h2>
+    <p data-i18n="not_found_body">This configuration may have been removed, or the link is incorrect.</p>
+  </div>
+
+  <div id="error-state" class="error" hidden>
+    <p data-i18n="load_failed">Failed to load this theme.</p>
+    <button id="retry-btn" type="button" data-i18n="retry">Retry</button>
+  </div>
+
+  <div id="detail" hidden>
+    <h1 id="config-name"></h1>
+    <p id="config-meta">
+      <span class="config-author"></span>
+      <span class="config-downloads"></span>
+      <span class="config-created"></span>
+    </p>
+
+    <section class="block">
+      <h2 data-i18n="section_palette">Color palette</h2>
+      <div class="table-scroll">
+        <table id="palette-table">
+          <thead>
+            <tr>
+              <th data-i18n="col_token">Token</th>
+              <th data-i18n="col_light">Light</th>
+              <th data-i18n="col_dark">Dark</th>
+            </tr>
+          </thead>
+          <tbody id="palette-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2 data-i18n="section_layout">Layout &amp; typography</h2>
+      <div class="table-scroll">
+        <table id="params-table">
+          <tbody id="params-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="assets-section" hidden>
+      <h2 data-i18n="section_assets">Assets</h2>
+      <div class="asset-grid" id="asset-grid"></div>
+    </section>
+
+    <section class="block">
+      <h2 data-i18n="section_howto">How to use</h2>
+      <ol class="howto">
+        <li data-i18n="howto_step1">Install the Aurora theme (luci-theme-aurora) on your router.</li>
+        <li data-i18n="howto_step2">Install the Aurora Config app (luci-app-aurora-config).</li>
+        <li id="howto-step3"></li>
+      </ol>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <span data-i18n="footer_feed_prefix">Looking for the package feed instead? </span>
+  <a id="feed-link" href="#" data-i18n="footer_feed_label">Visit the OpenWrt package feed</a>
+</footer>
+
+<script>
+"use strict";
+
+// -----------------------------------------------------------------------------
+// i18n — same tiny static-dictionary approach as index.html (no shared
+// module: each page here is single-file and self-contained by contract).
+// -----------------------------------------------------------------------------
+
+const STRINGS = {
+  en: {
+    back_to_gallery: "← Back to gallery",
+    loading: "Loading…",
+    retry: "Retry",
+    load_failed: "Failed to load this theme.",
+    not_found_title: "Theme not found",
+    not_found_body: "This configuration may have been removed, or the link is incorrect.",
+    section_palette: "Color palette",
+    col_token: "Token",
+    col_light: "Light",
+    col_dark: "Dark",
+    section_layout: "Layout & typography",
+    section_assets: "Assets",
+    section_howto: "How to use",
+    howto_step1: "Install the Aurora theme (luci-theme-aurora) on your router.",
+    howto_step2: "Install the Aurora Config app (luci-app-aurora-config).",
+    howto_step3_prefix: "In LuCI's Config Gallery (配置广场), search for “",
+    howto_step3_suffix: "”, or paste this page's URL.",
+    footer_feed_prefix: "Looking for the package feed instead? ",
+    footer_feed_label: "Visit the OpenWrt package feed",
+    author_unknown: "Unknown author",
+    downloads_suffix: " downloads",
+    font_named: "Font: ",
+  },
+  zh: {
+    back_to_gallery: "← 返回主题广场",
+    loading: "加载中…",
+    retry: "重试",
+    load_failed: "加载该主题失败。",
+    not_found_title: "未找到该主题",
+    not_found_body: "该配置可能已被删除,或链接有误。",
+    section_palette: "配色方案",
+    col_token: "变量名",
+    col_light: "浅色",
+    col_dark: "深色",
+    section_layout: "布局与字体",
+    section_assets: "资源文件",
+    section_howto: "如何使用",
+    howto_step1: "在路由器上安装 Aurora 主题(luci-theme-aurora)。",
+    howto_step2: "安装配置 App(luci-app-aurora-config)。",
+    howto_step3_prefix: "在 LuCI 配置广场中搜索“",
+    howto_step3_suffix: "”,或粘贴本页面网址。",
+    footer_feed_prefix: "想找软件源?",
+    footer_feed_label: "前往 OpenWrt 软件源",
+    author_unknown: "作者未知",
+    downloads_suffix: " 次下载",
+    font_named: "字体:",
+  },
+};
+
+const LANG_KEY = "aurora_hub_lang";
+const THEME_KEY = "aurora_hub_theme";
+
+function getLang() {
+  const stored = localStorage.getItem(LANG_KEY);
+  if (stored === "en" || stored === "zh") return stored;
+  return navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+let currentLang = getLang();
+
+function t(key) {
+  return STRINGS[currentLang][key] ?? STRINGS.en[key] ?? key;
+}
+
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.getElementById("lang-toggle").textContent = currentLang === "en" ? "中文" : "EN";
+  document.documentElement.lang = currentLang === "en" ? "en" : "zh";
+}
+
+document.getElementById("lang-toggle").addEventListener("click", () => {
+  currentLang = currentLang === "en" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, currentLang);
+  applyI18n();
+  if (lastConfig) renderDetail(lastConfig);
+});
+
+function applyStoredTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === "light" || stored === "dark") {
+    document.documentElement.setAttribute("data-theme", stored);
+  }
+}
+applyStoredTheme();
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  const systemPrefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const effectiveDark = current ? current === "dark" : systemPrefersDark;
+  const next = effectiveDark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem(THEME_KEY, next);
+});
+
+// -----------------------------------------------------------------------------
+// Footer feed link — computed purely client-side from location.hostname
+// (leading "themes." swapped for "openwrt."), per the functional contract:
+// no domain is ever hardcoded into this page, and the scheme is taken from
+// location.protocol rather than a literal "http(s)://" string.
+// -----------------------------------------------------------------------------
+
+function computeFeedHost(hostname) {
+  return hostname.replace(/^themes\./, "openwrt.");
+}
+
+(function setFeedLink() {
+  const feedHost = computeFeedHost(location.hostname);
+  const link = document.getElementById("feed-link");
+  link.href = location.protocol + "//" + feedHost + "/";
+})();
+
+// -----------------------------------------------------------------------------
+// Token list — must stay in lockstep with src/validate.js's COLOR_TOKENS
+// (31 tokens, each with light_/dark_ variants). This page has no build step
+// so it can't import that module; the order here only affects display order,
+// not correctness of validation (which happens server-side).
+// -----------------------------------------------------------------------------
+
+const COLOR_TOKENS = [
+  "bg", "surface", "text", "brand", "on_brand", "link", "info", "warning",
+  "success", "danger", "text_muted", "text_subtle", "surface_sunken",
+  "surface_overlay", "hairline", "hover_faint", "brand_hover",
+  "brand_subtle", "brand_subtle_hover", "focus_ring", "progress_start",
+  "progress_end", "info_surface", "warning_surface", "success_surface",
+  "danger_surface", "danger_surface_hover", "control_bg", "scrim",
+  "mega_menu_bg", "mega_menu_scrim",
+];
+
+const LAYOUT_FIELDS = [
+  "nav_type", "struct_spacing", "struct_radius_base",
+  "struct_content_width_centered", "toolbar_enabled",
+];
+const TYPOGRAPHY_FIELDS = ["font_sans", "font_mono", "struct_font_sans", "struct_font_mono"];
+
+const IMAGE_ASSET_KINDS = new Set([
+  "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192", "pwa_icon_512", "login_bg",
+]);
+
+// -----------------------------------------------------------------------------
+// Rendering — every user-derived string goes through textContent/
+// createTextNode; color values are assigned to style.backgroundColor as
+// property values, never concatenated into innerHTML.
+// -----------------------------------------------------------------------------
+
+function el(tag, opts) {
+  const node = document.createElement(tag);
+  if (opts && opts.className) node.className = opts.className;
+  if (opts && opts.text !== undefined) node.textContent = opts.text;
+  return node;
+}
+
+function renderPalette(colors) {
+  const body = document.getElementById("palette-body");
+  body.textContent = "";
+  for (const token of COLOR_TOKENS) {
+    const lightVal = colors["light_" + token];
+    const darkVal = colors["dark_" + token];
+
+    const row = document.createElement("tr");
+
+    const nameCell = document.createElement("td");
+    nameCell.className = "mono";
+    nameCell.textContent = token;
+    row.appendChild(nameCell);
+
+    for (const value of [lightVal, darkVal]) {
+      const cell = document.createElement("td");
+      const wrap = el("div", { className: "color-cell" });
+      const swatch = el("span", { className: "swatch" });
+      if (typeof value === "string") {
+        swatch.style.backgroundColor = value;
+      }
+      wrap.appendChild(swatch);
+      const label = el("span", { className: "mono", text: typeof value === "string" ? value : "" });
+      wrap.appendChild(label);
+      cell.appendChild(wrap);
+      row.appendChild(cell);
+    }
+
+    body.appendChild(row);
+  }
+}
+
+function renderParams(layout, typography) {
+  const body = document.getElementById("params-body");
+  body.textContent = "";
+
+  const addRow = (key, value) => {
+    const row = document.createElement("tr");
+    const keyCell = el("th", { text: key });
+    const valCell = document.createElement("td");
+    valCell.className = "mono";
+    valCell.textContent = value === undefined || value === null ? "" : String(value);
+    row.appendChild(keyCell);
+    row.appendChild(valCell);
+    body.appendChild(row);
+  };
+
+  for (const key of LAYOUT_FIELDS) addRow(key, layout ? layout[key] : undefined);
+  for (const key of TYPOGRAPHY_FIELDS) addRow(key, typography ? typography[key] : undefined);
+}
+
+function renderAssets(assets) {
+  const section = document.getElementById("assets-section");
+  const grid = document.getElementById("asset-grid");
+  grid.textContent = "";
+
+  if (!Array.isArray(assets) || assets.length === 0) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  for (const asset of assets) {
+    const tile = el("div", { className: "asset-tile" });
+    const preview = el("div", { className: "preview" });
+    tile.appendChild(preview);
+
+    if (IMAGE_ASSET_KINDS.has(asset.kind) && typeof asset.url === "string") {
+      const img = document.createElement("img");
+      img.src = asset.url;
+      img.alt = asset.kind;
+      preview.appendChild(img);
+    } else {
+      // font_sans / font_mono: named only, no in-page preview, per the
+      // functional contract ("font assets just named").
+      preview.appendChild(el("span", { text: t("font_named") + asset.kind }));
+    }
+
+    tile.appendChild(el("span", { className: "kind", text: asset.kind }));
+    grid.appendChild(tile);
+  }
+}
+
+function renderHowto(name) {
+  const li = document.getElementById("howto-step3");
+  li.textContent = "";
+  li.appendChild(document.createTextNode(t("howto_step3_prefix")));
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "howto-name";
+  nameSpan.textContent = name || "";
+  li.appendChild(nameSpan);
+  li.appendChild(document.createTextNode(t("howto_step3_suffix")));
+}
+
+let lastConfig = null;
+
+function renderDetail(data) {
+  lastConfig = data;
+
+  document.getElementById("config-name").textContent = data.name || "";
+
+  const authorText = data.author && data.author.trim() ? data.author : t("author_unknown");
+  document.querySelector(".config-author").textContent = authorText;
+
+  const downloads = Number.isFinite(data.downloads) ? data.downloads : 0;
+  document.querySelector(".config-downloads").textContent = String(downloads) + t("downloads_suffix");
+
+  document.querySelector(".config-created").textContent = data.created_at || "";
+
+  const payload = data.payload || {};
+  renderPalette(payload.colors || {});
+  renderParams(payload.layout || {}, payload.typography || {});
+  renderAssets(data.assets || []);
+  renderHowto(data.name);
+
+  applyI18n();
+
+  document.getElementById("loading-state").hidden = true;
+  document.getElementById("not-found-state").hidden = true;
+  document.getElementById("error-state").hidden = true;
+  document.getElementById("detail").hidden = false;
+}
+
+function showNotFound() {
+  document.getElementById("loading-state").hidden = true;
+  document.getElementById("error-state").hidden = true;
+  document.getElementById("detail").hidden = true;
+  document.getElementById("not-found-state").hidden = false;
+}
+
+function showError() {
+  document.getElementById("loading-state").hidden = true;
+  document.getElementById("not-found-state").hidden = true;
+  document.getElementById("detail").hidden = true;
+  document.getElementById("error-state").hidden = false;
+}
+
+function showLoading() {
+  document.getElementById("not-found-state").hidden = true;
+  document.getElementById("error-state").hidden = true;
+  document.getElementById("detail").hidden = true;
+  document.getElementById("loading-state").hidden = false;
+}
+
+// -----------------------------------------------------------------------------
+// id extraction + fetch — /c/{id} is the only shape this page expects to be
+// served under; anything else (e.g. this file requested at some other path)
+// renders the same not-found state rather than guessing.
+// -----------------------------------------------------------------------------
+
+function extractConfigId(pathname) {
+  const match = /^\/c\/([^/]+)\/?$/.exec(pathname);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function load() {
+  showLoading();
+  const id = extractConfigId(location.pathname);
+  if (!id) {
+    showNotFound();
+    return;
+  }
+
+  let res;
+  try {
+    res = await fetch("/api/v1/themes/aurora/configs/" + encodeURIComponent(id));
+  } catch {
+    showError();
+    return;
+  }
+
+  if (res.status === 404) {
+    showNotFound();
+    return;
+  }
+  if (!res.ok) {
+    showError();
+    return;
+  }
+
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    showError();
+    return;
+  }
+
+  renderDetail(body);
+}
+
+document.getElementById("retry-btn").addEventListener("click", load);
+
+// -----------------------------------------------------------------------------
+// Boot
+// -----------------------------------------------------------------------------
+
+applyI18n();
+load();
+</script>
+</body>
+</html>

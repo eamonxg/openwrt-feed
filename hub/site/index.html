@@ -1,1 +1,459 @@
-<!doctype html><html><head><title>Aurora Themes Hub</title></head><body>Aurora Themes Hub</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aurora Themes Hub</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7fa;
+    --panel: #ffffff;
+    --panel-2: #eef0f4;
+    --border: #dfe2e8;
+    --text: #1b1e27;
+    --text-muted: #666e7d;
+    --accent: #3b6fe0;
+    --danger: #c02f2f;
+    --danger-bg: #fbe9e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1c1f26;
+      --panel-2: #232733;
+      --border: #333846;
+      --text: #e6e8ee;
+      --text-muted: #9aa1b1;
+      --accent: #5b8cff;
+      --danger: #ff5c5c;
+      --danger-bg: #3a1f22;
+    }
+  }
+  /* Manual toggle wins over the OS preference in either direction. */
+  :root[data-theme="light"] {
+    --bg: #f6f7fa; --panel: #ffffff; --panel-2: #eef0f4; --border: #dfe2e8;
+    --text: #1b1e27; --text-muted: #666e7d; --accent: #3b6fe0;
+    --danger: #c02f2f; --danger-bg: #fbe9e9;
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161a; --panel: #1c1f26; --panel-2: #232733; --border: #333846;
+    --text: #e6e8ee; --text-muted: #9aa1b1; --accent: #5b8cff;
+    --danger: #ff5c5c; --danger-bg: #3a1f22;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  a { color: inherit; }
+
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header.top h1 { font-size: 1.15rem; margin: 0; font-weight: 700; }
+
+  .controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    padding: 0.45rem 0.85rem;
+  }
+  button:hover { border-color: var(--accent); }
+
+  .tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden; }
+  .tabs button { border: none; border-radius: 0; background: var(--panel); }
+  .tabs button + button { border-left: 1px solid var(--border); }
+  .tabs button.active { background: var(--accent); color: #fff; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .card {
+    display: block;
+    text-decoration: none;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card-name {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-sub {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+  }
+  .card-author, .card-downloads { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .palette { display: flex; flex-direction: column; gap: 0.3rem; }
+  .swatch-row { display: flex; gap: 0.2rem; }
+  .swatch-row .row-label {
+    width: 2.6rem;
+    flex: 0 0 auto;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+  }
+  .swatch-row .swatches { display: flex; flex: 1; gap: 0.2rem; }
+  .swatch {
+    flex: 1;
+    height: 22px;
+    border-radius: 0.25rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .empty, .error {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+  }
+  .error { color: var(--danger); }
+  .empty h2, .error p { margin: 0 0 0.75rem; }
+
+  #load-more { display: block; margin: 0 auto 2rem; }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 420px) {
+    header.top { padding: 0.75rem; }
+    header.top h1 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 data-i18n="site_title">Aurora Themes Hub</h1>
+  <div class="controls">
+    <div class="tabs" role="tablist">
+      <button id="sort-hot" class="active" role="tab" aria-selected="true" data-i18n="sort_hot">Hot</button>
+      <button id="sort-new" role="tab" aria-selected="false" data-i18n="sort_new">New</button>
+    </div>
+    <button id="lang-toggle" type="button">中文</button>
+    <button id="theme-toggle" type="button" aria-label="Toggle dark mode">🌗</button>
+  </div>
+</header>
+
+<main>
+  <div id="cards" class="grid"></div>
+
+  <div id="empty-state" class="empty" hidden>
+    <h2 data-i18n="empty_title">No themes yet</h2>
+    <p data-i18n="empty_body">Be the first to share an Aurora theme configuration from LuCI's Config Gallery.</p>
+  </div>
+
+  <div id="error-state" class="error" hidden>
+    <p data-i18n="load_failed">Failed to load themes.</p>
+    <button id="retry-btn" type="button" data-i18n="retry">Retry</button>
+  </div>
+
+  <button id="load-more" type="button" hidden data-i18n="load_more">Load more</button>
+</main>
+
+<template id="card-template">
+  <a class="card" href="#">
+    <h3 class="card-name"></h3>
+    <div class="card-sub">
+      <span class="card-author"></span>
+      <span class="card-downloads"></span>
+    </div>
+    <div class="palette">
+      <div class="swatch-row">
+        <span class="row-label" data-i18n="palette_light">Light</span>
+        <span class="swatches" data-row="light"></span>
+      </div>
+      <div class="swatch-row">
+        <span class="row-label" data-i18n="palette_dark">Dark</span>
+        <span class="swatches" data-row="dark"></span>
+      </div>
+    </div>
+  </a>
+</template>
+
+<noscript>This page needs JavaScript enabled to load the theme gallery.</noscript>
+
+<script>
+"use strict";
+
+// -----------------------------------------------------------------------------
+// i18n — a tiny static dictionary, no external library. `applyI18n()` walks
+// every [data-i18n] element currently in the document (including ones just
+// cloned in from #card-template) and sets its textContent from the active
+// language's table. Only ever textContent — see the module-level note below.
+// -----------------------------------------------------------------------------
+
+const STRINGS = {
+  en: {
+    site_title: "Aurora Themes Hub",
+    sort_hot: "Hot",
+    sort_new: "New",
+    load_more: "Load more",
+    retry: "Retry",
+    load_failed: "Failed to load themes.",
+    empty_title: "No themes yet",
+    empty_body: "Be the first to share an Aurora theme configuration from LuCI's Config Gallery.",
+    palette_light: "Light",
+    palette_dark: "Dark",
+    author_unknown: "Unknown author",
+    downloads_suffix: " downloads",
+  },
+  zh: {
+    site_title: "Aurora 主题广场",
+    sort_hot: "热门",
+    sort_new: "最新",
+    load_more: "加载更多",
+    retry: "重试",
+    load_failed: "加载主题失败。",
+    empty_title: "暂无主题",
+    empty_body: "从 LuCI 配置广场分享第一个 Aurora 主题配置吧。",
+    palette_light: "浅色",
+    palette_dark: "深色",
+    author_unknown: "作者未知",
+    downloads_suffix: " 次下载",
+  },
+};
+
+const LANG_KEY = "aurora_hub_lang";
+const THEME_KEY = "aurora_hub_theme";
+
+function getLang() {
+  const stored = localStorage.getItem(LANG_KEY);
+  if (stored === "en" || stored === "zh") return stored;
+  return navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+let currentLang = getLang();
+
+function t(key) {
+  return STRINGS[currentLang][key] ?? STRINGS.en[key] ?? key;
+}
+
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.getElementById("lang-toggle").textContent = currentLang === "en" ? "中文" : "EN";
+  document.documentElement.lang = currentLang === "en" ? "en" : "zh";
+}
+
+document.getElementById("lang-toggle").addEventListener("click", () => {
+  currentLang = currentLang === "en" ? "zh" : "en";
+  localStorage.setItem(LANG_KEY, currentLang);
+  applyI18n();
+  // Cards already on screen were built with language-dependent strings
+  // (author/downloads), so re-render them from the cached items rather than
+  // re-fetching the network.
+  renderAllFromCache();
+});
+
+// -----------------------------------------------------------------------------
+// Theme (light/dark) toggle — prefers-color-scheme drives the default via
+// CSS; a manual override is remembered in localStorage and applied through
+// the :root[data-theme] selectors above.
+// -----------------------------------------------------------------------------
+
+function applyStoredTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === "light" || stored === "dark") {
+    document.documentElement.setAttribute("data-theme", stored);
+  }
+}
+applyStoredTheme();
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  const systemPrefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const effectiveDark = current ? current === "dark" : systemPrefersDark;
+  const next = effectiveDark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem(THEME_KEY, next);
+});
+
+// -----------------------------------------------------------------------------
+// Card rendering — template clone + fill. Every user-derived string (name,
+// author) is written via textContent; every color value goes into
+// style.backgroundColor via direct property assignment. Nothing here is ever
+// concatenated into innerHTML.
+// -----------------------------------------------------------------------------
+
+const PALETTE_KEYS = ["bg", "surface", "text", "brand"];
+const cardTemplate = document.getElementById("card-template");
+const cardsEl = document.getElementById("cards");
+
+function buildSwatches(container, colorSet) {
+  container.textContent = "";
+  for (const key of PALETTE_KEYS) {
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    const value = colorSet ? colorSet[key] : undefined;
+    if (typeof value === "string") {
+      // Property assignment only — the CSSOM either accepts this as a valid
+      // color or silently ignores it; it can never be interpreted as markup.
+      swatch.style.backgroundColor = value;
+    }
+    container.appendChild(swatch);
+  }
+}
+
+function buildCard(item) {
+  const frag = cardTemplate.content.cloneNode(true);
+  const card = frag.querySelector(".card");
+  card.href = "/c/" + encodeURIComponent(item.id);
+
+  frag.querySelector(".card-name").textContent = item.name || "";
+
+  const authorText = item.author && item.author.trim() ? item.author : t("author_unknown");
+  frag.querySelector(".card-author").textContent = authorText;
+
+  const downloads = Number.isFinite(item.downloads) ? item.downloads : 0;
+  frag.querySelector(".card-downloads").textContent = String(downloads) + t("downloads_suffix");
+
+  const palette = item.palette || {};
+  buildSwatches(frag.querySelector('[data-row="light"]'), palette.light);
+  buildSwatches(frag.querySelector('[data-row="dark"]'), palette.dark);
+
+  return card;
+}
+
+let currentItems = [];
+
+function renderAllFromCache() {
+  cardsEl.textContent = "";
+  const fragment = document.createDocumentFragment();
+  for (const item of currentItems) {
+    fragment.appendChild(buildCard(item));
+  }
+  cardsEl.appendChild(fragment);
+  applyI18n();
+}
+
+// -----------------------------------------------------------------------------
+// Fetching — hot/new toggle, pagination via "Load more", failure/empty states.
+// -----------------------------------------------------------------------------
+
+const API_LIST_URL = "/api/v1/themes/aurora/configs";
+
+let currentSort = "hot";
+let currentPage = 1;
+let hasMore = false;
+let loading = false;
+
+const loadMoreBtn = document.getElementById("load-more");
+const emptyState = document.getElementById("empty-state");
+const errorState = document.getElementById("error-state");
+const sortHotBtn = document.getElementById("sort-hot");
+const sortNewBtn = document.getElementById("sort-new");
+
+function setSortButtons() {
+  const hotActive = currentSort === "hot";
+  sortHotBtn.classList.toggle("active", hotActive);
+  sortHotBtn.setAttribute("aria-selected", String(hotActive));
+  sortNewBtn.classList.toggle("active", !hotActive);
+  sortNewBtn.setAttribute("aria-selected", String(!hotActive));
+}
+
+async function fetchPage(sort, page) {
+  const url = API_LIST_URL + "?sort=" + encodeURIComponent(sort) + "&page=" + encodeURIComponent(String(page));
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error("Request failed with status " + res.status);
+  }
+  return res.json();
+}
+
+async function load({ append } = {}) {
+  if (loading) return;
+  loading = true;
+  errorState.hidden = true;
+  emptyState.hidden = true;
+  loadMoreBtn.hidden = true;
+
+  try {
+    const body = await fetchPage(currentSort, currentPage);
+    currentItems = append ? currentItems.concat(body.items) : body.items;
+    hasMore = Boolean(body.has_more);
+    renderAllFromCache();
+
+    if (currentItems.length === 0) {
+      emptyState.hidden = false;
+    }
+    loadMoreBtn.hidden = !hasMore;
+  } catch (err) {
+    if (!append) {
+      currentItems = [];
+      renderAllFromCache();
+    }
+    errorState.hidden = false;
+  } finally {
+    loading = false;
+  }
+}
+
+function switchSort(sort) {
+  if (sort === currentSort) return;
+  currentSort = sort;
+  currentPage = 1;
+  setSortButtons();
+  load({ append: false });
+}
+
+sortHotBtn.addEventListener("click", () => switchSort("hot"));
+sortNewBtn.addEventListener("click", () => switchSort("new"));
+
+document.getElementById("retry-btn").addEventListener("click", () => {
+  load({ append: false });
+});
+
+loadMoreBtn.addEventListener("click", () => {
+  currentPage += 1;
+  load({ append: true });
+});
+
+// -----------------------------------------------------------------------------
+// Boot
+// -----------------------------------------------------------------------------
+
+applyI18n();
+setSortButtons();
+load({ append: false });
+</script>
+</body>
+</html>

@@ -120,6 +120,26 @@ router.add("GET", "/admin", (request, env) => {
   return env.SITE.fetch(new Request(url, request));
 });
 
+// GET /c/:id — theme config detail page (Task 11). Mirrors the /admin
+// approach (Task 10): the page is a single self-contained static file
+// (site/config.html) that fetches its own data client-side from the API, so
+// the Worker's only job here is to hand back that file's bytes for any
+// config id — valid or not; the 404 for an unknown/removed id is rendered by
+// the page itself once its own fetch to the detail API (#2) comes back 404.
+//
+// Just like /admin, the request to env.SITE can't ask for the exact
+// "config.html" filename: the assets binding's html_handling
+// ("auto-trailing-slash") 307-redirects an exact "*.html" filename request to
+// its extensionless canonical form (here, that form is "/config" itself,
+// since config.html is a top-level file rather than a directory index like
+// admin's). Rewriting the sub-request's path to that already-canonical
+// "/config" serves the file directly with no redirect in the loop at all.
+router.add("GET", "/c/:id", (request, env) => {
+  const url = new URL(request.url);
+  url.pathname = "/config";
+  return env.SITE.fetch(new Request(url, request));
+});
+
 // #9-#15 — admin/moderation API. Every handler in admin.js calls
 // requireAdmin(request, env) as its first step, so no separate gate is
 // needed here in the router table.
