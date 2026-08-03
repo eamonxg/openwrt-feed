@@ -246,3 +246,73 @@ describe("sanitizeSvg — adversarial vectors", () => {
     expect(sanitizeSvg(input)).toBe(sanitizeSvg(input));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix-round 1 (security review): two real bypasses found and closed.
+// ---------------------------------------------------------------------------
+
+describe("sanitizeSvg — fix-round 1: hasDisallowedUrl Unicode index bypass", () => {
+  // U+0130 "İ" (LATIN CAPITAL LETTER I WITH DOT ABOVE) becomes 2 UTF-16 code
+  // units ("i" + a combining dot above) under String.prototype.toLowerCase().
+  // The original implementation searched for "url(" inside a *lowercased*
+  // copy of the text but then used the index it found to read out of the
+  // *original* (unlowercased) text. Padding the string with exactly 21 of
+  // these characters shifts the computed position by 21 code units, landing
+  // it on the embedded "#" inside "evil.example/x#y" instead of the
+  // character right after "url(" — which made the check wrongly conclude
+  // the reference was local and let the external URL through.
+  const I_PAD = "İ".repeat(21); // "İ" x 21
+
+  it("still flags an external url(...) in <style> content hidden behind Unicode-padding index drift", () => {
+    const out = sanitizeSvg(
+      `<svg><style>/*${I_PAD}*/rect{fill:url(http://evil.example/x#y)}</style><rect width="1"/></svg>`
+    );
+    expect(out).not.toContain("evil.example");
+    expect(out).toMatch(/<style\s*\/>|<style><\/style>/);
+  });
+
+  it("still flags the same Unicode-padding trick in a fill attribute", () => {
+    const out = sanitizeSvg(
+      `<svg><rect fill="${I_PAD}url(http://evil.example/x#y)" width="1"/></svg>`
+    );
+    expect(out).not.toContain("evil.example");
+    expect(out).not.toContain("fill=");
+  });
+
+  it("still keeps a plain url(#grad) reference (no regression)", () => {
+    const out = sanitizeSvg('<svg><rect fill="url(#grad)" width="1"/></svg>');
+    expect(out).toContain("url(#grad)");
+  });
+
+  it("treats url( #grad ) — whitespace around the fragment — as a local reference too", () => {
+    const out = sanitizeSvg('<svg><rect fill="url( #grad )" width="1"/></svg>');
+    expect(out).toContain("fill=");
+    expect(out).toContain("#grad");
+  });
+
+  it("still flags uppercase URL(http://...) as an external reference", () => {
+    const out = sanitizeSvg('<svg><rect fill="URL(http://evil.example/x)" width="1"/></svg>');
+    expect(out).not.toContain("evil.example");
+    expect(out).not.toContain("fill=");
+  });
+});
+
+describe("sanitizeSvg — fix-round 1: attribute-name smuggling", () => {
+  it("rejects an attribute name that smuggles a literal quote (font-family\"x=\"1\")", () => {
+    expectThrows('<svg><rect font-family"x="1" width="1"/></svg>');
+  });
+
+  it("rejects an attribute name that smuggles a literal quote via the stroke- prefix", () => {
+    expectThrows('<svg><rect stroke-"x="1" width="1"/></svg>');
+  });
+
+  it("still accepts legitimate font-*/stroke-* attribute names (no regression)", () => {
+    const out = sanitizeSvg('<svg><rect font-family="Arial" stroke-width="2" width="1"/></svg>');
+    expect(out).toContain('font-family="Arial"');
+    expect(out).toContain('stroke-width="2"');
+  });
+
+  it("rejects a malformed closing-tag name carrying a smuggled quote", () => {
+    expectThrows('<svg><rect width="1"></rect"x></svg>');
+  });
+});

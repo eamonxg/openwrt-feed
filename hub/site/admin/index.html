@@ -246,6 +246,30 @@ function isWhitespace(ch) {
   return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
 }
 
+// A conservative XML Name production (ASCII only — every whitelisted
+// element/attribute name is plain ASCII, so nothing legitimate is lost):
+// letters/underscore to start, then letters/digits/'.'/'_'/':'/'-' (the
+// colon is needed for "xlink:href", the hyphen for "stop-color" etc.).
+// Fix-round 1 (security review): `readNameLike` used to stop only at
+// whitespace or a caller-supplied stop-char set (e.g. "=/>"), which let a
+// name smuggle in a literal '"' — e.g. an attribute typed as
+// `font-family"x="1"` reads as the single (bogus) name `font-family"x`,
+// which then passed `isAttrAllowed`'s `startsWith("font-")` wildcard and,
+// since `serialize()` never escapes attribute *names* (only values), came
+// back out with the quote unescaped — breaking the attribute's quoting in
+// whatever re-parses the sanitized output. Every name (element and
+// attribute) is now validated against this pattern immediately after being
+// read; anything else is treated as malformed XML rather than silently
+// patched around, consistent with the rest of the parser's fail-fast
+// stance on syntax errors.
+const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9._:-]*$/;
+
+function assertValidName(name, context) {
+  if (!NAME_PATTERN.test(name)) {
+    throw new XmlSyntaxError(`Invalid ${context} name: ${JSON.stringify(name)}`);
+  }
+}
+
 function decodeEntities(raw) {
   let out = "";
   let i = 0;
@@ -330,6 +354,7 @@ function parseXml(text) {
       if (src[i] === ">" || src[i] === "/") break;
 
       const name = readNameLike("=/>");
+      assertValidName(name, "attribute");
       skipWhitespace();
       if (src[i] !== "=") {
         // e.g. a bare boolean-style attribute, or whitespace splitting what
@@ -419,6 +444,7 @@ function parseXml(text) {
     if (src.startsWith("</", i)) {
       i += 2;
       const name = readNameLike("/>");
+      assertValidName(name, "element");
       skipWhitespace();
       if (src[i] !== ">") throw new XmlSyntaxError(`Malformed closing tag for "${name}".`);
       i += 1;
@@ -433,6 +459,7 @@ function parseXml(text) {
     // Opening (possibly self-closing) tag.
     i += 1;
     const name = readNameLike("/>");
+    assertValidName(name, "element");
     const attrs = parseAttributes();
     if (i >= len) throw new XmlSyntaxError(`Unclosed start tag "${name}".`);
 
@@ -473,18 +500,38 @@ function parseXml(text) {
 // anything else is a network fetch the sanitizer must not let through.
 // ---------------------------------------------------------------------------
 
+// Fix-round 1 (security review): this used to build `lower =
+// text.toLowerCase()` and then reuse indices found in `lower` to index back
+// into the *original* `text`. Some Unicode characters change length under
+// toLowerCase() (e.g. U+0130 "İ" -> "i" + a combining dot above, 1 code
+// unit becomes 2), which desynchronizes every index after the first such
+// character — padding a string with enough of them shifts a later
+// "url(...)"'s computed position into the middle of an actual external
+// URL, landing on a byte that happens to be '#' and wrongly passing as a
+// local reference. Fixed by never lowercasing the whole string at all:
+// match the literal 3-letter ASCII token "url(" case-insensitively one
+// character at a time, directly against `text`'s own indices, so no index
+// ever comes from a differently-sized copy of the string.
+function isAsciiCi(ch, lower, upper) {
+  return ch === lower || ch === upper;
+}
+
 function hasDisallowedUrl(text) {
-  const lower = text.toLowerCase();
-  let searchFrom = 0;
-  for (;;) {
-    const found = lower.indexOf("url(", searchFrom);
-    if (found === -1) return false;
-    let pos = found + 4;
+  for (let i = 0; i + 4 <= text.length; i += 1) {
+    if (
+      !isAsciiCi(text[i], "u", "U") ||
+      !isAsciiCi(text[i + 1], "r", "R") ||
+      !isAsciiCi(text[i + 2], "l", "L") ||
+      text[i + 3] !== "("
+    ) {
+      continue;
+    }
+    let pos = i + 4;
     while (pos < text.length && isWhitespace(text[pos])) pos += 1;
     if (text[pos] === '"' || text[pos] === "'") pos += 1;
     if (text[pos] !== "#") return true;
-    searchFrom = found + 4;
   }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +598,16 @@ function escapeAttr(value) {
 function serialize(node) {
   if (node.type === "text") return escapeText(node.value);
 
+  // Defense in depth: names are already validated at parse time
+  // (assertValidName), so this should be unreachable in normal operation —
+  // but attribute *names* are never escaped below (only values are), so if
+  // an invalid name ever reached this far, emitting it verbatim could break
+  // the output's quoting. Fail loud instead.
+  assertValidName(node.name, "element");
+  for (const [name] of node.attrs) {
+    assertValidName(name, "attribute");
+  }
+
   const attrString = node.attrs.map(([name, value]) => ` ${name}="${escapeAttr(value)}"`).join("");
   if (node.children.length === 0) {
     return `<${node.name}${attrString}/>`;
@@ -589,7 +646,18 @@ function sanitizeSvg(svgText) {
     throw new Error("sanitizeSvg: no whitelisted root element survived sanitization.");
   }
 
-  return serialize(sanitizedRoot);
+  try {
+    return serialize(sanitizedRoot);
+  } catch (err) {
+    if (err instanceof XmlSyntaxError) {
+      // Only assertValidName's defense-in-depth check inside serialize()
+      // can throw this — unreachable in normal operation since names are
+      // already validated at parse time, but wrapped the same way for a
+      // consistent error surface if it ever does.
+      throw new Error(`sanitizeSvg: malformed XML — ${err.message}`);
+    }
+    throw err;
+  }
 }
 
 /* SANITIZE_SVG_INLINE_END */
