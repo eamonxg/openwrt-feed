@@ -19,6 +19,27 @@ export function errorResponse(status, code, message) {
   return jsonResponse({ error: { code, message } }, { status });
 }
 
+// CORS: LuCI frontends call the API straight from the router's origin.
+// Read endpoints are public data and write endpoints authenticate via the
+// device token carried in the body, so a wildcard origin does not widen
+// access. The static site is intentionally left same-origin (see worker.js).
+export const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "access-control-allow-headers": "Content-Type",
+  "access-control-max-age": "86400",
+};
+
+export function withCors(response) {
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", "*");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 // Global Constraint: request bodies are capped at 12 MB.
 export const MAX_BODY_BYTES = 12 * 1024 * 1024;
 

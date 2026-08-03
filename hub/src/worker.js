@@ -19,7 +19,7 @@ import {
   handleReportsList,
   handleResolveReport,
 } from "./admin.js";
-import { jsonResponse, errorResponse, MAX_BODY_BYTES } from "./http.js";
+import { jsonResponse, errorResponse, MAX_BODY_BYTES, CORS_HEADERS, withCors } from "./http.js";
 
 const router = createRouter();
 
@@ -156,6 +156,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // CORS preflight, before any routing: the router has no OPTIONS routes,
+    // and LuCI frontends need POST/PUT/DELETE with a JSON content-type to
+    // clear the browser's preflight check.
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
     // A percent-encoded path segment that isn't valid UTF-8 (e.g. GET
     // /c/%ff) makes router.dispatch's decodeURIComponent throw a raw
     // URIError synchronously, before any handler runs — left unguarded that
@@ -168,14 +175,14 @@ export default {
       matched = router.dispatch(request, env);
     } catch (err) {
       if (err instanceof URIError) {
-        return errorResponse(400, "bad_request", "The request path is malformed.");
+        return withCors(errorResponse(400, "bad_request", "The request path is malformed."));
       }
       throw err;
     }
-    if (matched) return matched;
+    if (matched) return withCors(await matched);
 
     if (url.pathname.startsWith("/api/")) {
-      return errorResponse(404, "not_found", "The requested resource was not found.");
+      return withCors(errorResponse(404, "not_found", "The requested resource was not found."));
     }
 
     return env.SITE.fetch(request);
