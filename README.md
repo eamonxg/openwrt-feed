@@ -1,15 +1,22 @@
-# openwrt-feed
+# openwrt-cloud
 
-The signed OpenWrt package feed behind `packages.json`, together with the
-landing page in `site/`. CI builds each listed package in both `opkg` and `apk`
-form, publishes them under `releases/` and `snapshots/`, and deploys the feed
-and the page to Cloudflare.
+The online services behind the eamonxg OpenWrt/LuCI ecosystem. Each
+top-level directory is an independently deployed Cloudflare Worker:
+
+| Directory | Serves | What it is |
+| --- | --- | --- |
+| `feed/` | `openwrt.<DOMAIN>` | The signed OpenWrt package feed behind `feed/packages.json`, together with its landing page in `feed/site/`. CI builds each listed package in both `opkg` and `apk` form, publishes them under `releases/` and `snapshots/`, and deploys the feed and the page to Cloudflare. |
+| `hub/` | `themes.<DOMAIN>` | (planned) The themes hub: a gallery and API for sharing LuCI theme configurations. |
+
+The real domain is never committed; workflows substitute it from repo
+variables (`FEED_HOST`, `HUB_HOST`).
 
 ## Third-party assets
 
-Files in `site/assets` that come from elsewhere, and the terms they arrive
-under. The two fonts are distributed under the SIL Open Font License 1.1; this
-notice is where their required copyright and licence notice travels.
+Files in `feed/site/assets` that come from elsewhere, and the terms they
+arrive under. The two fonts are distributed under the SIL Open Font License
+1.1; this notice is where their required copyright and licence notice
+travels.
 
 | File | Source | License |
 | --- | --- | --- |
