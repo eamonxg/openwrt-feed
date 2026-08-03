@@ -125,6 +125,60 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     expect(new Set(combined)).toEqual(new Set(ids));
     expect(combined).toHaveLength(25);
   });
+
+  it("hot sort breaks a downloads tie by id ASC, independent of insertion order", async () => {
+    const id1 = await share({ name: "HotTie1", colors: { light_bg: "#0a0a0a" } });
+    const id2 = await share({ name: "HotTie2", colors: { light_bg: "#0b0b0b" } });
+
+    await env.DB.prepare("UPDATE configs SET downloads = 3 WHERE id IN (?, ?)")
+      .bind(id1, id2)
+      .run();
+
+    // Don't assume id1 < id2 from insertion/generation order — sort the two
+    // actual (random, shortId-generated) ids ourselves and compare against
+    // that, per the coordinator's fix-round note.
+    const expectedOrder = [id1, id2].sort();
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const body = await res.json();
+    expect(body.items.map((i) => i.id)).toEqual(expectedOrder);
+  });
+
+  it("new sort breaks a created_at tie by id ASC, independent of insertion order", async () => {
+    const id1 = await share({ name: "NewTie1", colors: { light_bg: "#0c0c0c" } });
+    const id2 = await share({ name: "NewTie2", colors: { light_bg: "#0d0d0d" } });
+
+    await env.DB.prepare("UPDATE configs SET created_at = ? WHERE id IN (?, ?)")
+      .bind("2026-02-02T00:00:00Z", id1, id2)
+      .run();
+
+    const expectedOrder = [id1, id2].sort();
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=new`);
+    const body = await res.json();
+    expect(body.items.map((i) => i.id)).toEqual(expectedOrder);
+  });
+
+  it("page=0 and page=-1 fall back to page=1; a page far past the data is an empty 200", async () => {
+    await share({ name: "PageA", colors: { light_bg: "#0e1e1e" } });
+    await share({ name: "PageB", colors: { light_bg: "#0e2e2e" } });
+
+    const zero = await SELF.fetch(`${LIST_URL}?page=0`);
+    expect(zero.status).toBe(200);
+    const zeroBody = await zero.json();
+    expect(zeroBody.page).toBe(1);
+    expect(zeroBody.items).toHaveLength(2);
+
+    const negative = await SELF.fetch(`${LIST_URL}?page=-1`);
+    expect(negative.status).toBe(200);
+    const negativeBody = await negative.json();
+    expect(negativeBody.page).toBe(1);
+    expect(negativeBody.items).toHaveLength(2);
+
+    const farAhead = await SELF.fetch(`${LIST_URL}?page=1000000000`);
+    expect(farAhead.status).toBe(200);
+    expect(await farAhead.json()).toEqual({ items: [], page: 1000000000, has_more: false });
+  });
 });
 
 describe("GET /api/v1/themes/:theme/configs/:id (detail)", () => {
