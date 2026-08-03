@@ -1,0 +1,3 @@
+#!/bin/sh
+[ "$1" = "-u" ] && { echo "${FAKE_UID:-0}"; exit 0; }
+exit 1

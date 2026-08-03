@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake wget: only the -qO <dest> <url> form the installer uses.
+echo "wget $*" >> "$FAKE_LOG"
+[ -z "${FAKE_WGET_FAIL:-}" ] || exit 4
+[ "$1" = "-qO" ] || exit 1
+echo "fake-key-material" > "$2"
+exit 0

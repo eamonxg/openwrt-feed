@@ -1,0 +1,36 @@
+#!/bin/sh
+# Fake apk. Same FAKE_* contract as the fake opkg.
+echo "apk $*" >> "$FAKE_LOG"
+lookup() {
+  for kv in $2; do
+    case "$kv" in "$1="*) echo "${kv#*=}"; return 0 ;; esac
+  done
+  return 1
+}
+has() {
+  for n in $2; do [ "$n" = "$1" ] && return 0; done
+  return 1
+}
+cmd=$1; shift
+case "$cmd" in
+  update) echo "fetch ok"; exit 0 ;;
+  info)
+    case "$1" in
+      -e) has "$2" "$FAKE_INSTALLED" && echo "$2"; exit 0 ;;
+      -L) echo "$2-1.0 contains:"; echo "www/luci-static/${2#luci-theme-}/cascade.css"; exit 0 ;;
+    esac; exit 0 ;;
+  list)
+    if [ "$1" = "-I" ]; then
+      has "$2" "$FAKE_INSTALLED" || exit 0
+      echo "$2-$(lookup "$2" "$FAKE_INSTALLED_VER" || echo 0.0.0) noarch {$2} (GPL) [installed]"
+    else
+      v=$(lookup "$1" "$FAKE_AVAIL") || exit 0
+      echo "$1-$v noarch {$1} (GPL)"
+    fi; exit 0 ;;
+  add|upgrade)
+    for p in "$@"; do
+      if has "$p" "$FAKE_FAIL"; then echo "apk: $p failed" >&2; exit 1; fi
+      echo "Installing $p"
+    done; exit 0 ;;
+esac
+exit 0

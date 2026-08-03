@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+REPO=$PWD
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+fail=0
+
+# Render install.sh the way the site build does, so tests exercise the shipped
+# file rather than the placeholder template.
+render() {
+  sed -e 's/__FEED_HOST__/feed.example.test/g' \
+      -e 's/__USIGN_FPR__/0b26f36ae0f4106d/g' \
+      -e 's/__PACKAGES__/luci-theme-aurora luci-theme-shadcn luci-app-aurora-config/g' \
+      "$REPO/site/install.sh" > "$tmp/install.sh"
+  chmod +x "$tmp/install.sh"
+}
+
+# setup_sandbox <pm>   pm = apk | opkg
+setup_sandbox() {
+  rm -rf "$tmp/root" "$tmp/log"
+  mkdir -p "$tmp/root/etc" "$tmp/root/lib/apk/db" "$tmp/root/usr/lib/opkg"
+  if [ "$1" = apk ]; then touch "$tmp/root/lib/apk/db/installed"
+  else touch "$tmp/root/usr/lib/opkg/status"; fi
+  : > "$tmp/log"
+}
+
+# run_install <stdin-for-tty|""> [env assignments...]
+# Returns the script's exit code in $rc, its output in $out.
+run_install() {
+  local ttyin=$1; shift
+  if [ -n "$ttyin" ]; then printf '%s' "$ttyin" > "$tmp/ttyin"
+  else rm -f "$tmp/ttyin"; fi
+  set +e
+  out=$(env PATH="$REPO/tests/fixtures/fake-bin:$PATH" \
+        ROOT="$tmp/root" \
+        TTY_DEV="${ttyin:+$tmp/ttyin}" \
+        FAKE_LOG="$tmp/log" \
+        "$@" sh "$tmp/install.sh" 2>&1)
+  rc=$?
+  set -e
+}
+
+assert_log() { grep -qxF "$1" "$tmp/log" || { echo "FAIL: expected log line: $1"; cat "$tmp/log"; fail=1; }; }
+refute_log() { grep -qxF "$1" "$tmp/log" && { echo "FAIL: unexpected log line: $1"; fail=1; }; return 0; }
+assert_out() { grep -qF "$1" <<<"$out" || { echo "FAIL: expected output: $1"; echo "$out"; fail=1; }; }
+
+# --- no controlling terminal: add the feed, print commands, exit 0 -----------
+render
+setup_sandbox opkg
+run_install "" FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" = 0 ] || { echo "FAIL: no-tty run exited $rc"; echo "$out"; fail=1; }
+assert_log "opkg update"
+assert_out "opkg install luci-theme-aurora"
+refute_log "opkg install luci-theme-aurora"
+grep -q "src/gz eamonxg https://feed.example.test/snapshots/opkg" \
+  "$tmp/root/etc/opkg/customfeeds.conf" || { echo "FAIL: feed line not written"; fail=1; }
+
+# --- non-root exits early with a clear message -------------------------------
+setup_sandbox opkg
+run_install "" FAKE_UID=1000
+[ "$rc" != 0 ] || { echo "FAIL: non-root run should exit non-zero"; fail=1; }
+assert_out "must be run as root"
+refute_log "opkg update"
+
+# --- a failed key download names the missing TLS package ---------------------
+setup_sandbox opkg
+run_install "" FAKE_WGET_FAIL=1
+[ "$rc" != 0 ] || { echo "FAIL: failed download should exit non-zero"; fail=1; }
+assert_out "libustream-ssl-mbedtls"
+
+# --- the printed listing reflects probed state ------------------------------
+setup_sandbox opkg
+run_install "" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: listing run exited $rc"; echo "$out"; fail=1; }
+assert_out "not installed"
+assert_out "installed 1.0.1"
+assert_log "opkg list-installed luci-theme-shadcn"
+assert_log "opkg list luci-theme-aurora"
+
+# --- PKGS= picks the verb per package ---------------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-aurora luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3"
+[ "$rc" = 0 ] || { echo "FAIL: PKGS run exited $rc"; echo "$out"; fail=1; }
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg upgrade luci-theme-shadcn"
+refute_log "opkg install luci-theme-shadcn"
+
+# --- same split on apk ------------------------------------------------------
+setup_sandbox apk
+run_install "" YES=1 PKGS="luci-theme-aurora luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3"
+assert_log "apk add luci-theme-aurora"
+assert_log "apk upgrade luci-theme-shadcn"
+
+# --- an unknown name in PKGS is an error, and nothing is installed -----------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-nope" FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" != 0 ] || { echo "FAIL: unknown PKGS name should exit non-zero"; fail=1; }
+assert_out "not in this feed"
+refute_log "opkg install luci-theme-nope"
+
+# --- one failing package does not abandon the rest --------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-aurora luci-app-aurora-config" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-app-aurora-config=2.0.0" \
+  FAKE_FAIL="luci-theme-aurora"
+[ "$rc" != 0 ] || { echo "FAIL: a failed package should make the run exit non-zero"; fail=1; }
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg install luci-app-aurora-config"
+assert_out "Failed:"
+
+# --- toggling by number, then Enter, installs exactly the ticked packages ----
+# Fixture: shadcn is installed, so it starts ticked. "1" ticks aurora as well,
+# Enter confirms the list, "y" answers the Proceed prompt.
+setup_sandbox opkg
+run_install $'1\n\ny\n' \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: menu run exited $rc"; echo "$out"; fail=1; }
+assert_out "[x] luci-theme-shadcn"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg upgrade luci-theme-shadcn"
+refute_log "opkg install luci-app-aurora-config"
+
+# --- "q" quits without touching anything ------------------------------------
+setup_sandbox opkg
+run_install $'q\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" = 0 ] || { echo "FAIL: quit should exit 0"; fail=1; }
+refute_log "opkg install luci-theme-aurora"
+
+# --- invalid input reprompts instead of exiting -----------------------------
+setup_sandbox opkg
+run_install $'zzz\n9\nn\nq\n' FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$rc" = 0 ] || { echo "FAIL: reprompt run exited $rc"; echo "$out"; fail=1; }
+assert_out "not a choice"
+
+# --- "a" ticks everything ---------------------------------------------------
+setup_sandbox opkg
+run_install $'a\n\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg install luci-theme-shadcn"
+assert_log "opkg install luci-app-aurora-config"
+
+# --- the language pack follows the app package ------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="zh-cn" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-zh-cn=2.0.0"
+assert_log "opkg install luci-app-aurora-config"
+assert_log "opkg install luci-i18n-aurora-config-zh-cn"
+
+# --- a language the feed does not carry is skipped, main package unaffected --
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="eo" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0"
+[ "$rc" = 0 ] || { echo "FAIL: missing language pack must not fail the run"; echo "$out"; fail=1; }
+assert_log "opkg install luci-app-aurora-config"
+refute_log "opkg install luci-i18n-aurora-config-eo"
+
+# --- lang=auto means no language pack ---------------------------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-app-aurora-config" FAKE_LANG="auto" \
+  FAKE_AVAIL="luci-app-aurora-config=2.0.0 luci-i18n-aurora-config-auto=2.0.0"
+refute_log "opkg install luci-i18n-aurora-config-auto"
+
+# --- accepting the offer points LuCI at the theme's static directory --------
+setup_sandbox opkg
+run_install $'1\n\ny\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+assert_log "opkg files luci-theme-aurora"
+assert_log "uci set luci.main.mediaurlbase=/luci-static/aurora"
+assert_log "uci commit luci"
+
+# --- declining leaves the configuration alone -------------------------------
+setup_sandbox opkg
+run_install $'1\n\ny\nn\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-theme-aurora"
+refute_log "uci commit luci"
+
+# --- no theme installed, no offer -------------------------------------------
+setup_sandbox opkg
+run_install $'3\n\ny\n' \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+assert_log "opkg install luci-app-aurora-config"
+refute_log "uci commit luci"
+
+# --- the run order matches the printed list order ---------------------------
+# Pre-ticked packages seed the selection before any toggle appends to it, so
+# without an explicit re-order shadcn (#2) would be acted on before aurora (#1)
+# and the confirmation would contradict the list the user just read.
+setup_sandbox opkg
+run_install $'1\n\ny\nn\n' \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-aurora=1.1.0 luci-theme-shadcn=1.0.3 luci-app-aurora-config=2.0.0"
+order=$(grep -E '^opkg (install|upgrade) ' "$tmp/log" | tr '\n' '|')
+[ "$order" = "opkg install luci-theme-aurora|opkg upgrade luci-theme-shadcn|" ] \
+  || { echo "FAIL: run order does not match list order: $order"; fail=1; }
+
+exit "$fail"
