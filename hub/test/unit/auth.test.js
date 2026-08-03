@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest";
+import { env } from "cloudflare:test";
+import {
+  HttpError,
+  timingSafeEqual,
+  requireAdmin,
+  deviceFromToken,
+  bumpQuota,
+} from "../../src/auth.js";
+import { sha256Hex } from "../../src/ids.js";
+
+const VALID_TOKEN = "a".repeat(64);
+
+function req(headers = {}) {
+  return new Request("https://example.com/api/v1/admin/pending", { headers });
+}
+
+describe("HttpError", () => {
+  it("carries status, code and message", () => {
+    const err = new HttpError(401, "unauthorized", "nope");
+    expect(err).toBeInstanceOf(Error);
+    expect(err.status).toBe(401);
+    expect(err.code).toBe("unauthorized");
+    expect(err.message).toBe("nope");
+  });
+});
+
+describe("timingSafeEqual", () => {
+  it("returns true for equal strings", () => {
+    expect(timingSafeEqual("abc123", "abc123")).toBe(true);
+  });
+
+  it("returns false for different strings of the same length", () => {
+    expect(timingSafeEqual("abc123", "abc124")).toBe(false);
+  });
+
+  it("returns false for strings of different lengths", () => {
+    expect(timingSafeEqual("abc", "abcd")).toBe(false);
+  });
+});
+
+describe("requireAdmin", () => {
+  const env = { ADMIN_TOKEN: "supersecret" };
+
+  it("passes for a matching bearer token", () => {
+    expect(() =>
+      requireAdmin(req({ Authorization: "Bearer supersecret" }), env)
+    ).not.toThrow();
+  });
+
+  it("throws HttpError(401, unauthorized) for a missing header", () => {
+    try {
+      requireAdmin(req(), env);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect(err.status).toBe(401);
+      expect(err.code).toBe("unauthorized");
+    }
+  });
+
+  it("throws HttpError(401, unauthorized) for a wrong token", () => {
+    expect(() => requireAdmin(req({ Authorization: "Bearer wrong" }), env)).toThrow(
+      HttpError
+    );
+  });
+});
+
+describe("deviceFromToken", () => {
+  it("throws HttpError(400, bad_token) for a malformed token", async () => {
+    try {
+      await deviceFromToken(env.DB, "not-a-token", { register: true });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect(err.status).toBe(400);
+      expect(err.code).toBe("bad_token");
+    }
+  });
+
+  it("returns null for an unknown token when register is false", async () => {
+    const token = "b".repeat(64);
+    const device = await deviceFromToken(env.DB, token, { register: false });
+    expect(device).toBeNull();
+  });
+
+  it("registers a fresh device with an 8 char id when register is true", async () => {
+    const token = "c".repeat(64);
+    const device = await deviceFromToken(env.DB, token, { register: true });
+    expect(device).not.toBeNull();
+    expect(device.id).toHaveLength(8);
+    expect(device.banned).toBe(0);
+    expect(device.quota_used).toBe(0);
+  });
+
+  it("returns the same device row on subsequent lookups of the same token", async () => {
+    const token = "d".repeat(64);
+    const first = await deviceFromToken(env.DB, token, { register: true });
+    const second = await deviceFromToken(env.DB, token, { register: false });
+    expect(second).not.toBeNull();
+    expect(second.id).toBe(first.id);
+  });
+
+  it("propagates the banned flag for an existing device", async () => {
+    const token = "e".repeat(64);
+    const hash = await sha256Hex(token);
+    await env.DB.prepare(
+      "INSERT INTO devices (id, secret_hash, banned) VALUES (?, ?, 1)"
+    )
+      .bind("banneddv", hash)
+      .run();
+
+    const device = await deviceFromToken(env.DB, token, { register: false });
+    expect(device.banned).toBe(1);
+  });
+});
+
+describe("bumpQuota", () => {
+  it("allows up to 10 uses per day and rejects the 11th", async () => {
+    const token = "f".repeat(64);
+    let device = await deviceFromToken(env.DB, token, { register: true });
+    const today = "2026-08-03";
+
+    for (let i = 0; i < 10; i++) {
+      const ok = await bumpQuota(env.DB, device, today);
+      expect(ok).toBe(true);
+      device = await deviceFromToken(env.DB, token, { register: false });
+    }
+
+    const rejected = await bumpQuota(env.DB, device, today);
+    expect(rejected).toBe(false);
+    expect(device.quota_used).toBe(10);
+  });
+
+  it("resets the counter across a UTC day boundary", async () => {
+    const token = "0".repeat(64);
+    let device = await deviceFromToken(env.DB, token, { register: true });
+
+    for (let i = 0; i < 10; i++) {
+      await bumpQuota(env.DB, device, "2026-08-02");
+      device = await deviceFromToken(env.DB, token, { register: false });
+    }
+    expect(await bumpQuota(env.DB, device, "2026-08-02")).toBe(false);
+
+    const ok = await bumpQuota(env.DB, device, "2026-08-03");
+    expect(ok).toBe(true);
+
+    const refreshed = await deviceFromToken(env.DB, token, { register: false });
+    expect(refreshed.quota_day).toBe("2026-08-03");
+    expect(refreshed.quota_used).toBe(1);
+  });
+});
