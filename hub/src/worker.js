@@ -101,6 +101,25 @@ router.add("POST", "/api/v1/themes/:theme/configs/:id/report", (request, env, pa
   return rejected ?? handleReport(request, env, params);
 });
 
+// GET /admin — the static review console (Task 10). The run_worker_first
+// table (wrangler config) routes this to the Worker rather than letting the
+// SITE assets binding resolve it directly, so it must be served explicitly
+// here. The admin page lives at site/admin/index.html (a directory index)
+// rather than site/admin.html: the assets binding's default html_handling
+// ("auto-trailing-slash") canonicalizes any exact "*.html" filename request
+// to its extensionless form via a 307 — for a top-level "admin.html" that
+// redirect target is "/admin" itself, which re-enters this very route and
+// loops forever. For a directory index the canonical, redirect-free path is
+// "/admin/" (with the trailing slash, verified against a local wrangler dev
+// run) — bare "/admin" itself gets a 307 to "/admin/" from the assets
+// binding, so the trailing slash is added here to serve the content
+// directly instead of bouncing the client through that extra redirect.
+router.add("GET", "/admin", (request, env) => {
+  const url = new URL(request.url);
+  url.pathname = "/admin/";
+  return env.SITE.fetch(new Request(url, request));
+});
+
 // #9-#15 — admin/moderation API. Every handler in admin.js calls
 // requireAdmin(request, env) as its first step, so no separate gate is
 // needed here in the router table.

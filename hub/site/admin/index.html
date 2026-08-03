@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Aurora Themes Hub — Admin</title>
+<style>
+  :root {
+    color-scheme: dark light;
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --panel-2: #232733;
+    --border: #333846;
+    --text: #e6e8ee;
+    --text-muted: #9aa1b1;
+    --accent: #5b8cff;
+    --danger: #ff5c5c;
+    --danger-bg: #3a1f22;
+    --ok: #57c97a;
+    --warn: #e8b74b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header.top h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header.top .status { font-size: 0.8rem; color: var(--text-muted); }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 0.4rem;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 0.4rem 0.8rem;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0a0e18; font-weight: 600; }
+  button.danger { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+  input[type="text"], input[type="password"] {
+    font: inherit;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 0.4rem;
+    padding: 0.45rem 0.6rem;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+  #login-view { max-width: 360px; margin: 4rem auto; padding: 1.5rem; background: var(--panel); border: 1px solid var(--border); border-radius: 0.6rem; }
+  #login-view h2 { margin-top: 0; font-size: 1.1rem; }
+  #login-view form { display: flex; flex-direction: column; gap: 0.6rem; }
+  #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2em; }
+  section.block { margin-bottom: 2rem; }
+  section.block h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .card-head h3 { margin: 0; font-size: 1rem; }
+  .card-head .meta { font-size: 0.8rem; color: var(--text-muted); }
+  .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+  .asset-tile { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.5rem; background: var(--panel-2); font-size: 0.75rem; }
+  .asset-tile .kind { font-weight: 600; display: block; margin-bottom: 0.35rem; }
+  .asset-tile .preview { display: flex; align-items: center; justify-content: center; height: 72px; background: repeating-conic-gradient(#2a2e38 0% 25%, #232631 0% 50%) 50% / 16px 16px; border-radius: 0.35rem; overflow: hidden; margin-bottom: 0.35rem; }
+  .asset-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .asset-tile .font-sample { font-size: 1.1rem; color: var(--text); text-align: center; }
+  .asset-tile .state-ok { color: var(--ok); }
+  .asset-tile .state-error { color: var(--danger); word-break: break-word; }
+  .asset-tile .state-pending { color: var(--text-muted); }
+  .card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .empty { color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
+  .inline-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  table.reports { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.reports th, table.reports td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="login-view">
+  <h2>Aurora Themes Hub — Admin</h2>
+  <form id="login-form">
+    <input type="password" id="login-token" placeholder="ADMIN_TOKEN" autocomplete="off" />
+    <button type="submit" class="primary">Sign in</button>
+    <div id="login-error"></div>
+  </form>
+</div>
+
+<div id="app-view" hidden>
+  <header class="top">
+    <h1>Aurora Themes Hub — Review console</h1>
+    <div>
+      <span class="status" id="status-line"></span>
+      <button id="logout-btn">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <section class="block">
+      <h2>Pending queue</h2>
+      <div id="queue-error" class="asset-tile state-error" hidden></div>
+      <div id="queue"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section class="block">
+      <h2>Ban a device</h2>
+      <div class="inline-form">
+        <input type="text" id="ban-device-id" placeholder="device id" />
+        <button id="ban-device-btn" class="danger">Ban device</button>
+      </div>
+      <div id="ban-device-status" class="empty"></div>
+    </section>
+
+    <section class="block">
+      <h2>Open reports</h2>
+      <div id="reports"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// =============================================================================
+// SYNC: keep identical to src/sanitize-svg.js — change both together.
+// (this page has no build step, so it can't `import` the module; this block
+// is mechanically kept byte-identical to src/sanitize-svg.js's own body,
+// minus the ES module `export` keyword — see hub/scripts/sync-sanitize-svg.mjs
+// or diff the two files directly to verify.)
+// =============================================================================
+/* SANITIZE_SVG_INLINE_START */
+// Whitelist SVG sanitizer — the security-critical core of the moderation
+// flow (Task 10). Pure function, zero dependencies, no DOMParser: workerd
+// has no DOMParser, and the exact same implementation must run both in the
+// Worker (a possible future server-side use) and inlined into admin.html's
+// browser context. A hand-written XML tokenizer/parser is used instead of
+// any regex-only stripping — regex-based XML "sanitizers" are the classic
+// bypass (they cannot track nesting, quoting, comments or CDATA correctly).
+//
+// Design: parse -> whitelist-filter tree -> re-serialize. Three stages:
+//   1. parseXml(text)   hand-written recursive-descent tokenizer/parser.
+//      Throws on any malformed XML (unbalanced tags, unclosed quotes,
+//      unknown entities, more/less than one root element, ...).
+//   2. sanitizeElement(node)  recursively applies the whitelist: elements
+//      not in ALLOWED_ELEMENTS are dropped together with their whole
+//      subtree (their content is never even considered for output); on
+//      elements that survive, attributes go through the same one-veto
+//      rules described in the task brief (on* handlers, href/xlink:href
+//      that isn't a local "#fragment", any "url(...)" reference that isn't
+//      "url(#...)").
+//   3. serialize(node)  re-emits the surviving tree as XML text, escaping
+//      all text/attribute content so nothing that survives stage 2 can ever
+//      re-become live markup (this is what makes CDATA- or entity-hidden
+//      "<script>" text permanently inert: it comes back out as
+//      "&lt;script&gt;", never as a tag).
+//
+// SYNC NOTE: site/admin/index.html inlines a byte-identical copy of this function
+// body (admin.html has no build step, so it can't `import` this module) —
+// keep the two in lockstep; each carries a comment pointing at the other.
+
+// ---------------------------------------------------------------------------
+// Whitelists (task brief, verbatim)
+// ---------------------------------------------------------------------------
+
+const ALLOWED_ELEMENTS = new Set([
+  "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline",
+  "polygon", "defs", "linearGradient", "radialGradient", "stop", "clipPath",
+  "mask", "pattern", "symbol", "use", "text", "tspan", "title", "desc",
+  "style",
+]);
+
+// Explicit non-presentation attributes named in the brief.
+const ALLOWED_ATTRS = new Set([
+  "id", "class", "viewBox", "width", "height", "x", "y", "x1", "y1", "x2",
+  "y2", "cx", "cy", "r", "rx", "ry", "d", "points", "transform", "offset",
+  "stop-color", "stop-opacity", "fill", "stroke", "stroke-width", "opacity",
+  "clip-path", "mask", "href", "xlink:href", "gradientUnits",
+  "gradientTransform", "patternUnits", "preserveAspectRatio", "font-family",
+  "font-size", "font-weight", "font-style", "text-anchor",
+  // "style" is itself a presentation attribute (inline CSS) — the brief's
+  // one-veto rule explicitly calls out checking "style element/attribute"
+  // text for non-local url(...), which only makes sense if the attribute is
+  // allowed at all.
+  "style",
+]);
+
+// Additional common SVG presentation attributes ("表现属性" is named as a
+// whole category in the brief, not just the handful spelled out above) —
+// none of these carry any script/network capability on their own.
+const PRESENTATION_EXTRA = new Set([
+  "fill-opacity", "fill-rule", "stroke-opacity", "stroke-linecap",
+  "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray",
+  "stroke-dashoffset", "clip-rule", "color", "display", "visibility",
+  "cursor", "pointer-events", "font-variant", "font-stretch",
+  "letter-spacing", "word-spacing", "text-decoration", "overflow",
+  "marker-start", "marker-mid", "marker-end", "direction", "unicode-bidi",
+  "vector-effect", "shape-rendering", "image-rendering", "paint-order",
+]);
+
+function isAttrAllowed(name) {
+  return (
+    ALLOWED_ATTRS.has(name) ||
+    PRESENTATION_EXTRA.has(name) ||
+    name.startsWith("stroke-") ||
+    name.startsWith("font-")
+  );
+}
+
+const HREF_ATTRS = new Set(["href", "xlink:href"]);
+
+// ---------------------------------------------------------------------------
+// Tiny XML tokenizer/parser
+// ---------------------------------------------------------------------------
+//
+// Produces a tree of:
+//   { type: "element", name, attrs: [[name, decodedValue], ...], children }
+//   { type: "text", value: decodedString }
+// Comments, the XML declaration/other processing instructions, and DOCTYPEs
+// are recognized and discarded entirely — DOCTYPE internal subsets (where a
+// classic XXE/custom-entity trick would be declared) are skipped over
+// unexecuted, never interpreted.
+
+class XmlSyntaxError extends Error {}
+
+function isWhitespace(ch) {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+function decodeEntities(raw) {
+  let out = "";
+  let i = 0;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (ch !== "&") {
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    const semi = raw.indexOf(";", i + 1);
+    if (semi === -1 || semi - i > 12) {
+      throw new XmlSyntaxError("Unterminated entity reference.");
+    }
+    const body = raw.slice(i + 1, semi);
+
+    if (body === "lt") out += "<";
+    else if (body === "gt") out += ">";
+    else if (body === "amp") out += "&";
+    else if (body === "quot") out += '"';
+    else if (body === "apos") out += "'";
+    else if (/^#[0-9]+$/.test(body)) {
+      out += codePointToChar(Number.parseInt(body.slice(1), 10));
+    } else if (/^#x[0-9a-fA-F]+$/.test(body)) {
+      out += codePointToChar(Number.parseInt(body.slice(2), 16));
+    } else {
+      // Any other named entity is undefined without a DTD we actually
+      // process (we deliberately never execute a DOCTYPE's internal
+      // subset) — per strict XML this is a well-formedness error, and
+      // rejecting it also closes off the classic XXE/custom-entity
+      // obfuscation trick outright, rather than trying to guess intent.
+      throw new XmlSyntaxError(`Unknown entity reference: &${body};`);
+    }
+
+    i = semi + 1;
+  }
+  return out;
+}
+
+function codePointToChar(codePoint) {
+  try {
+    return String.fromCodePoint(codePoint);
+  } catch {
+    throw new XmlSyntaxError("Invalid numeric character reference.");
+  }
+}
+
+function parseXml(text) {
+  // Strip a leading UTF-8 BOM if the string still carries one.
+  let src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const len = src.length;
+  let i = 0;
+
+  const root = { type: "root", children: [] };
+  const stack = [root];
+
+  function currentChildren() {
+    return stack[stack.length - 1].children;
+  }
+
+  function readNameLike(stopChars) {
+    const start = i;
+    while (i < len && !isWhitespace(src[i]) && !stopChars.includes(src[i])) {
+      i += 1;
+    }
+    if (i === start) {
+      throw new XmlSyntaxError("Expected a name.");
+    }
+    return src.slice(start, i);
+  }
+
+  function skipWhitespace() {
+    while (i < len && isWhitespace(src[i])) i += 1;
+  }
+
+  function parseAttributes() {
+    const attrs = [];
+    for (;;) {
+      skipWhitespace();
+      if (i >= len) throw new XmlSyntaxError("Unclosed start tag.");
+      if (src[i] === ">" || src[i] === "/") break;
+
+      const name = readNameLike("=/>");
+      skipWhitespace();
+      if (src[i] !== "=") {
+        // e.g. a bare boolean-style attribute, or whitespace splitting what
+        // looked like one attribute name into two tokens ("on load=..."):
+        // XML requires name="value" for every attribute, no exceptions.
+        throw new XmlSyntaxError(`Attribute "${name}" is missing "=value".`);
+      }
+      i += 1; // consume '='
+      skipWhitespace();
+      const quote = src[i];
+      if (quote !== '"' && quote !== "'") {
+        throw new XmlSyntaxError(`Attribute "${name}" value must be quoted.`);
+      }
+      i += 1;
+      const valStart = i;
+      const closeQuote = src.indexOf(quote, i);
+      if (closeQuote === -1) {
+        throw new XmlSyntaxError(`Unclosed quote for attribute "${name}".`);
+      }
+      const rawValue = src.slice(valStart, closeQuote);
+      i = closeQuote + 1;
+      attrs.push([name, decodeEntities(rawValue)]);
+    }
+    return attrs;
+  }
+
+  while (i < len) {
+    if (src[i] !== "<") {
+      const start = i;
+      const next = src.indexOf("<", i);
+      const end = next === -1 ? len : next;
+      const rawText = src.slice(start, end);
+      i = end;
+      currentChildren().push({ type: "text", value: decodeEntities(rawText) });
+      continue;
+    }
+
+    if (src.startsWith("<!--", i)) {
+      const close = src.indexOf("-->", i + 4);
+      if (close === -1) throw new XmlSyntaxError("Unclosed comment.");
+      i = close + 3;
+      continue; // comments are discarded, not added to the tree
+    }
+
+    if (src.startsWith("<![CDATA[", i)) {
+      const close = src.indexOf("]]>", i + 9);
+      if (close === -1) throw new XmlSyntaxError("Unclosed CDATA section.");
+      // CDATA content is literal text per XML: no entity decoding, and
+      // critically no tag parsing — a "<script>" string in here is data,
+      // never markup (serialize() re-escapes it on the way back out).
+      const raw = src.slice(i + 9, close);
+      i = close + 3;
+      currentChildren().push({ type: "text", value: raw });
+      continue;
+    }
+
+    if (src.startsWith("<!DOCTYPE", i) || src.startsWith("<!doctype", i)) {
+      // Skip to the matching top-level '>', tracking '[' ... ']' nesting so
+      // an internal subset's own declarations (each terminated by their own
+      // '>') can't be mistaken for the doctype's close. The subset's
+      // content (e.g. a custom <!ENTITY ...> declaration) is never
+      // examined or executed — it is discarded along with everything else
+      // here.
+      let depth = 0;
+      let j = i + 9;
+      let closed = false;
+      for (; j < len; j += 1) {
+        if (src[j] === "[") depth += 1;
+        else if (src[j] === "]") depth -= 1;
+        else if (src[j] === ">" && depth <= 0) {
+          closed = true;
+          break;
+        }
+      }
+      if (!closed) throw new XmlSyntaxError("Unclosed DOCTYPE declaration.");
+      i = j + 1;
+      continue; // DOCTYPE is discarded wholesale
+    }
+
+    if (src.startsWith("<?", i)) {
+      const close = src.indexOf("?>", i + 2);
+      if (close === -1) throw new XmlSyntaxError("Unclosed processing instruction.");
+      i = close + 2;
+      continue;
+    }
+
+    if (src.startsWith("</", i)) {
+      i += 2;
+      const name = readNameLike("/>");
+      skipWhitespace();
+      if (src[i] !== ">") throw new XmlSyntaxError(`Malformed closing tag for "${name}".`);
+      i += 1;
+      const top = stack[stack.length - 1];
+      if (stack.length <= 1 || top.name !== name) {
+        throw new XmlSyntaxError(`Mismatched closing tag: expected "${top.name}", got "${name}".`);
+      }
+      stack.pop();
+      continue;
+    }
+
+    // Opening (possibly self-closing) tag.
+    i += 1;
+    const name = readNameLike("/>");
+    const attrs = parseAttributes();
+    if (i >= len) throw new XmlSyntaxError(`Unclosed start tag "${name}".`);
+
+    let selfClosing = false;
+    if (src[i] === "/") {
+      selfClosing = true;
+      i += 1;
+      skipWhitespace();
+    }
+    if (src[i] !== ">") throw new XmlSyntaxError(`Malformed start tag "${name}".`);
+    i += 1;
+
+    const node = { type: "element", name, attrs, children: [] };
+    currentChildren().push(node);
+    if (!selfClosing) {
+      stack.push(node);
+    }
+  }
+
+  if (stack.length !== 1) {
+    throw new XmlSyntaxError(`Unclosed element "${stack[stack.length - 1].name}".`);
+  }
+
+  const topLevelElements = root.children.filter(
+    (node) => node.type === "element" || (node.type === "text" && node.value.trim() !== "")
+  );
+  if (topLevelElements.length !== 1 || topLevelElements[0].type !== "element") {
+    throw new XmlSyntaxError("Document must have exactly one root element.");
+  }
+
+  return topLevelElements[0];
+}
+
+// ---------------------------------------------------------------------------
+// url(...) one-veto check — shared by <style> element content and any
+// attribute value (fill="url(...)", style="...", mask="url(...)", ...):
+// only a same-document local fragment reference "url(#...)" is trusted;
+// anything else is a network fetch the sanitizer must not let through.
+// ---------------------------------------------------------------------------
+
+function hasDisallowedUrl(text) {
+  const lower = text.toLowerCase();
+  let searchFrom = 0;
+  for (;;) {
+    const found = lower.indexOf("url(", searchFrom);
+    if (found === -1) return false;
+    let pos = found + 4;
+    while (pos < text.length && isWhitespace(text[pos])) pos += 1;
+    if (text[pos] === '"' || text[pos] === "'") pos += 1;
+    if (text[pos] !== "#") return true;
+    searchFrom = found + 4;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Whitelist filtering
+// ---------------------------------------------------------------------------
+
+function sanitizeElement(node) {
+  if (!ALLOWED_ELEMENTS.has(node.name)) {
+    return null; // whole subtree removed, per the brief
+  }
+
+  const attrs = [];
+  for (const [rawName, value] of node.attrs) {
+    if (/^on/i.test(rawName)) continue; // one-veto: any event handler
+    if (!isAttrAllowed(rawName)) continue; // not on the whitelist at all
+
+    if (HREF_ATTRS.has(rawName) && !value.trim().startsWith("#")) {
+      continue; // one-veto: only local "#fragment" refs survive
+    }
+    if (hasDisallowedUrl(value)) {
+      continue; // one-veto: non-local url(...) anywhere in an attribute value
+    }
+
+    attrs.push([rawName, value]);
+  }
+
+  const children = [];
+  for (const child of node.children) {
+    if (child.type === "text") {
+      children.push(child);
+      continue;
+    }
+    const sanitizedChild = sanitizeElement(child);
+    if (sanitizedChild) children.push(sanitizedChild);
+  }
+
+  if (node.name === "style") {
+    const combinedText = children
+      .filter((c) => c.type === "text")
+      .map((c) => c.value)
+      .join("");
+    if (hasDisallowedUrl(combinedText)) {
+      children.length = 0; // empty the style content, per the brief
+    }
+  }
+
+  return { type: "element", name: node.name, attrs, children };
+}
+
+// ---------------------------------------------------------------------------
+// Serialization — every text/attribute value is re-escaped here, which is
+// what makes anything that survived stage 2 (e.g. CDATA- or
+// entity-obfuscated "<script>" text) permanently inert on the way back out.
+// ---------------------------------------------------------------------------
+
+function escapeText(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttr(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function serialize(node) {
+  if (node.type === "text") return escapeText(node.value);
+
+  const attrString = node.attrs.map(([name, value]) => ` ${name}="${escapeAttr(value)}"`).join("");
+  if (node.children.length === 0) {
+    return `<${node.name}${attrString}/>`;
+  }
+  const inner = node.children.map(serialize).join("");
+  return `<${node.name}${attrString}>${inner}</${node.name}>`;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+// Sanitizes an SVG document against the task brief's whitelist. Throws a
+// plain Error on any malformed XML (unbalanced tags, unclosed quotes,
+// unknown entities, wrong number of root elements, ...) or if nothing
+// whitelisted survives at all. Returns the re-serialized, sanitized SVG
+// text otherwise. Pure function: same input always produces the same
+// output, no globals, no I/O.
+function sanitizeSvg(svgText) {
+  if (typeof svgText !== "string") {
+    throw new Error("sanitizeSvg: input must be a string.");
+  }
+
+  let root;
+  try {
+    root = parseXml(svgText);
+  } catch (err) {
+    if (err instanceof XmlSyntaxError) {
+      throw new Error(`sanitizeSvg: malformed XML — ${err.message}`);
+    }
+    throw err;
+  }
+
+  const sanitizedRoot = sanitizeElement(root);
+  if (!sanitizedRoot) {
+    throw new Error("sanitizeSvg: no whitelisted root element survived sanitization.");
+  }
+
+  return serialize(sanitizedRoot);
+}
+
+/* SANITIZE_SVG_INLINE_END */
+// =============================================================================
+// END SYNC block
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Auth / session
+// -----------------------------------------------------------------------------
+
+const TOKEN_KEY = "aurora_hub_admin_token";
+
+function getToken() {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+function setToken(token) {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+function clearToken() {
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function showLogin(message) {
+  document.getElementById("app-view").hidden = true;
+  document.getElementById("login-view").hidden = false;
+  document.getElementById("login-error").textContent = message || "";
+}
+function showApp() {
+  document.getElementById("login-view").hidden = true;
+  document.getElementById("app-view").hidden = false;
+}
+
+// Every authenticated call goes through here: attaches the Bearer token and
+// uniformly reacts to 401 by clearing the (bad) token and dropping back to
+// the login screen, per the functional contract.
+async function apiFetch(path, options) {
+  const token = getToken();
+  if (!token) {
+    showLogin("");
+    throw new Error("Not signed in.");
+  }
+  const opts = options || {};
+  const headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + token });
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (res.status === 401) {
+    clearToken();
+    showLogin("Session expired or invalid token — please sign in again.");
+    throw new Error("Unauthorized.");
+  }
+  return res;
+}
+
+async function apiFetchJson(path, options) {
+  const res = await apiFetch(path, options);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = (body && body.error && body.error.message) || ("Request failed (" + res.status + ").");
+    throw new Error(message);
+  }
+  return body;
+}
+
+// -----------------------------------------------------------------------------
+// Bytes <-> base64
+// -----------------------------------------------------------------------------
+
+function bytesToBase64(bytes) {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// -----------------------------------------------------------------------------
+// Per-kind sanitation
+// -----------------------------------------------------------------------------
+
+// createImageBitmap + canvas re-encode to PNG strips any embedded
+// metadata/polyglot tricks in raster formats — this applies to every
+// browser-decodable raster kind except favicon_ico (see note below).
+const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg"]);
+const MAX_IMAGE_DIMENSION = 4096;
+
+async function fetchPendingAsset(configId, kind) {
+  const res = await apiFetch(
+    "/api/v1/admin/assets/" + encodeURIComponent(configId) + "/" + encodeURIComponent(kind)
+  );
+  if (!res.ok) {
+    throw new Error("Failed to fetch raw asset bytes (" + res.status + ").");
+  }
+  const contentType = res.headers.get("content-type") || "";
+  const buf = await res.arrayBuffer();
+  return { bytes: new Uint8Array(buf), contentType };
+}
+
+// Returns { ok: true, bytes, blob, previewKind } or { ok: false, message }.
+// Never throws — every failure path here is a sanitize failure the caller
+// surfaces on the card and uses to disable "Approve".
+async function sanitizeAsset(configId, kind) {
+  let fetched;
+  try {
+    fetched = await fetchPendingAsset(configId, kind);
+  } catch (err) {
+    return { ok: false, message: err.message || String(err) };
+  }
+  const { bytes, contentType } = fetched;
+
+  if (kind === "logo_svg") {
+    try {
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+      const sanitized = sanitizeSvg(text);
+      const outBytes = new TextEncoder().encode(sanitized);
+      const blob = new Blob([outBytes], { type: "image/svg+xml" });
+      return { ok: true, bytes: outBytes, blob, previewKind: "svg" };
+    } catch (err) {
+      return { ok: false, message: "SVG sanitize failed: " + (err.message || err) };
+    }
+  }
+
+  if (CANVAS_REENCODE_KINDS.has(kind)) {
+    let bitmap;
+    try {
+      const srcBlob = new Blob([bytes], { type: contentType || "image/png" });
+      bitmap = await createImageBitmap(srcBlob);
+    } catch (err) {
+      return { ok: false, message: "Not a decodable image." };
+    }
+    if (bitmap.width > MAX_IMAGE_DIMENSION || bitmap.height > MAX_IMAGE_DIMENSION) {
+      bitmap.close();
+      return {
+        ok: false,
+        message: "Image exceeds the " + MAX_IMAGE_DIMENSION + "x" + MAX_IMAGE_DIMENSION + " cap (" +
+          bitmap.width + "x" + bitmap.height + ").",
+      };
+    }
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      // login_bg accepts jpeg input at share time but is always
+      // re-encoded to png here, per the functional contract.
+      const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!pngBlob) throw new Error("canvas.toBlob returned null.");
+      const outBytes = new Uint8Array(await pngBlob.arrayBuffer());
+      return { ok: true, bytes: outBytes, blob: pngBlob, previewKind: "image" };
+    } catch (err) {
+      return { ok: false, message: "Re-encode failed: " + (err.message || err) };
+    }
+  }
+
+  // favicon_ico: deliberately NOT canvas-reencoded. canvas.toBlob only ever
+  // produces png/jpeg/webp — never ico — and the admin approve endpoint
+  // (src/admin.js, MAGIC_CHECKS.favicon_ico = isIco) requires the ICO magic
+  // bytes (00 00 01 00) to survive into the approved asset. Re-encoding
+  // this kind to PNG would make it permanently impossible to approve.
+  // font_sans/font_mono (woff2): passthrough — the magic bytes were already
+  // checked at upload time (assets.js), same rationale as the brief's
+  // explicit woff2 passthrough.
+  const blob = new Blob([bytes], { type: contentType || "application/octet-stream" });
+  return { ok: true, bytes, blob, previewKind: kind === "favicon_ico" ? "image" : "font" };
+}
+
+// -----------------------------------------------------------------------------
+// Queue rendering
+// -----------------------------------------------------------------------------
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const key of Object.keys(attrs)) {
+      if (key === "class") node.className = attrs[key];
+      else if (key === "text") node.textContent = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    }
+  }
+  for (const child of children || []) {
+    if (child) node.appendChild(child);
+  }
+  return node;
+}
+
+let fontSampleCounter = 0;
+
+function renderAssetPreview(tile, kind, result) {
+  const preview = el("div", { class: "preview" });
+  const stateLine = el("div");
+  tile.appendChild(preview);
+  tile.appendChild(stateLine);
+
+  if (!result.ok) {
+    stateLine.className = "state-error";
+    stateLine.textContent = result.message;
+    return;
+  }
+
+  stateLine.className = "state-ok";
+  stateLine.textContent = "sanitized ok (" + result.bytes.length + " bytes)";
+
+  const url = URL.createObjectURL(result.blob);
+  if (result.previewKind === "svg" || result.previewKind === "image") {
+    const img = el("img", { src: url, alt: kind });
+    preview.appendChild(img);
+  } else if (result.previewKind === "font") {
+    fontSampleCounter += 1;
+    const family = "admin-preview-font-" + fontSampleCounter;
+    const sample = el("div", { class: "font-sample", text: "Aa 123" });
+    preview.appendChild(sample);
+    const face = new FontFace(family, "url(" + url + ")");
+    face
+      .load()
+      .then((loaded) => {
+        document.fonts.add(loaded);
+        sample.style.fontFamily = family;
+      })
+      .catch(() => {
+        stateLine.className = "state-error";
+        stateLine.textContent = "sanitized, but font failed to render for preview.";
+      });
+  }
+}
+
+async function renderQueueCard(item) {
+  const card = el("div", { class: "card" });
+  const head = el("div", { class: "card-head" }, [
+    el("h3", { text: item.name || "(untitled)" }),
+    el("div", {
+      class: "meta",
+      text: "id " + item.config_id + " · author " + (item.author || "—") + " · " + item.created_at,
+    }),
+  ]);
+  card.appendChild(head);
+
+  const grid = el("div", { class: "asset-grid" });
+  card.appendChild(grid);
+
+  const approveBtn = el("button", { class: "primary", text: "Approve" });
+  const rejectBtn = el("button", { text: "Reject" });
+  const takedownBtn = el("button", { class: "danger", text: "Takedown" });
+  approveBtn.disabled = true;
+  const actions = el("div", { class: "card-actions" }, [approveBtn, rejectBtn, takedownBtn]);
+  card.appendChild(actions);
+
+  const results = {};
+  for (const asset of item.assets) {
+    const tile = el("div", { class: "asset-tile" }, [el("span", { class: "kind", text: asset.kind })]);
+    const pendingLine = el("div", { class: "state-pending", text: "sanitizing…" });
+    tile.appendChild(pendingLine);
+    grid.appendChild(tile);
+
+    // eslint-disable-next-line no-await-in-loop
+    const result = await sanitizeAsset(item.config_id, asset.kind);
+    results[asset.kind] = result;
+    tile.removeChild(pendingLine);
+    renderAssetPreview(tile, asset.kind, result);
+  }
+
+  const allOk = item.assets.every((a) => results[a.kind] && results[a.kind].ok);
+  approveBtn.disabled = !allOk;
+
+  approveBtn.addEventListener("click", async () => {
+    if (!confirm("Approve \"" + item.name + "\" with the sanitized assets shown?")) return;
+    approveBtn.disabled = true;
+    try {
+      const body = {
+        assets: item.assets.map((a) => ({
+          kind: a.kind,
+          data_b64: bytesToBase64(results[a.kind].bytes),
+        })),
+      };
+      await apiFetchJson("/api/v1/admin/configs/" + encodeURIComponent(item.config_id) + "/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      card.remove();
+    } catch (err) {
+      alert("Approve failed: " + (err.message || err));
+      approveBtn.disabled = !allOk;
+    }
+  });
+
+  rejectBtn.addEventListener("click", async () => {
+    if (!confirm("Reject the pending assets for \"" + item.name + "\"?")) return;
+    try {
+      await apiFetchJson("/api/v1/admin/configs/" + encodeURIComponent(item.config_id) + "/reject", {
+        method: "POST",
+      });
+      card.remove();
+    } catch (err) {
+      alert("Reject failed: " + (err.message || err));
+    }
+  });
+
+  takedownBtn.addEventListener("click", async () => {
+    if (!confirm("Take down \"" + item.name + "\" entirely? This removes the config.")) return;
+    try {
+      await apiFetchJson("/api/v1/admin/configs/" + encodeURIComponent(item.config_id) + "/takedown", {
+        method: "POST",
+      });
+      card.remove();
+    } catch (err) {
+      alert("Takedown failed: " + (err.message || err));
+    }
+  });
+
+  return card;
+}
+
+async function loadPending() {
+  const queue = document.getElementById("queue");
+  const queueError = document.getElementById("queue-error");
+  queueError.hidden = true;
+  queue.innerHTML = "";
+  queue.appendChild(el("div", { class: "empty", text: "Loading…" }));
+
+  let data;
+  try {
+    data = await apiFetchJson("/api/v1/admin/pending");
+  } catch (err) {
+    queue.innerHTML = "";
+    queueError.hidden = false;
+    queueError.textContent = "Failed to load pending queue: " + (err.message || err);
+    return;
+  }
+
+  queue.innerHTML = "";
+  if (!data.items || data.items.length === 0) {
+    queue.appendChild(el("div", { class: "empty", text: "Nothing pending." }));
+    return;
+  }
+  for (const item of data.items) {
+    // eslint-disable-next-line no-await-in-loop
+    const card = await renderQueueCard(item);
+    queue.appendChild(card);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Ban device
+// -----------------------------------------------------------------------------
+
+document.getElementById("ban-device-btn").addEventListener("click", async () => {
+  const input = document.getElementById("ban-device-id");
+  const statusEl = document.getElementById("ban-device-status");
+  const deviceId = input.value.trim();
+  if (!deviceId) return;
+  if (!confirm("Ban device \"" + deviceId + "\"? This removes all of its active configs.")) return;
+  try {
+    const result = await apiFetchJson("/api/v1/admin/devices/" + encodeURIComponent(deviceId) + "/ban", {
+      method: "POST",
+    });
+    statusEl.textContent = "Banned " + deviceId + " — removed " + result.removed_configs + " config(s).";
+    input.value = "";
+    loadPending();
+  } catch (err) {
+    statusEl.textContent = "Ban failed: " + (err.message || err);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Reports
+// -----------------------------------------------------------------------------
+
+async function loadReports() {
+  const container = document.getElementById("reports");
+  container.innerHTML = "";
+  let data;
+  try {
+    data = await apiFetchJson("/api/v1/admin/reports");
+  } catch (err) {
+    container.appendChild(el("div", { class: "empty", text: "Failed to load reports: " + (err.message || err) }));
+    return;
+  }
+  if (!data.items || data.items.length === 0) {
+    container.appendChild(el("div", { class: "empty", text: "No open reports." }));
+    return;
+  }
+  const table = el("table", { class: "reports" });
+  const thead = el("tr", null, [
+    el("th", { text: "config" }),
+    el("th", { text: "reason" }),
+    el("th", { text: "ip" }),
+    el("th", { text: "created" }),
+    el("th", { text: "" }),
+  ]);
+  table.appendChild(thead);
+  for (const report of data.items) {
+    const resolveBtn = el("button", { text: "Resolve" });
+    resolveBtn.addEventListener("click", async () => {
+      if (!confirm("Mark report #" + report.id + " resolved?")) return;
+      try {
+        await apiFetchJson("/api/v1/admin/reports/" + encodeURIComponent(report.id) + "/resolve", {
+          method: "POST",
+        });
+        loadReports();
+      } catch (err) {
+        alert("Resolve failed: " + (err.message || err));
+      }
+    });
+    const row = el("tr", null, [
+      el("td", { text: report.config_id }),
+      el("td", { text: report.reason }),
+      el("td", { text: report.ip }),
+      el("td", { text: report.created_at }),
+      el("td", null, [resolveBtn]),
+    ]);
+    table.appendChild(row);
+  }
+  container.appendChild(table);
+}
+
+// -----------------------------------------------------------------------------
+// Boot
+// -----------------------------------------------------------------------------
+
+document.getElementById("login-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.getElementById("login-token");
+  const token = input.value.trim();
+  if (!token) return;
+  setToken(token);
+  input.value = "";
+  boot();
+});
+
+document.getElementById("logout-btn").addEventListener("click", () => {
+  clearToken();
+  showLogin("");
+});
+
+function boot() {
+  if (!getToken()) {
+    showLogin("");
+    return;
+  }
+  showApp();
+  document.getElementById("status-line").textContent = "signed in";
+  loadPending();
+  loadReports();
+}
+
+boot();
+</script>
+</body>
+</html>
