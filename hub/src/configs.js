@@ -367,6 +367,217 @@ export async function handleConfigDetail(request, env, params) {
 }
 
 // ---------------------------------------------------------------------------
+// #4 PUT /themes/:theme/configs/:id — author update
+// #5 DELETE /themes/:theme/configs/:id — author removal
+//
+// Both share the same owner-authorization gate: look up the device from its
+// token with silent registration OFF (an unrecognized token can never be an
+// owner), then load the config row and compare device ids. Order matters —
+// see requireOwnedConfig's own comment for the exact reasoning.
+// ---------------------------------------------------------------------------
+
+async function findDuplicateExcluding(db, theme, hash, excludeId) {
+  return db
+    .prepare("SELECT id FROM configs WHERE theme = ? AND content_hash = ? AND status = 'active' AND id != ?")
+    .bind(theme, hash, excludeId)
+    .first();
+}
+
+// An unknown token always surfaces as 403 not_owner without ever touching
+// the configs table, so a guessed/stolen id can't be used to distinguish
+// "doesn't exist" from "not yours" via a different status code. Once the
+// device is real, the config's own existence is checked first (404
+// not_found for missing/removed/theme-mismatched rows), and only then is
+// ownership compared (403 not_owner). Banned-ness is checked last, after
+// ownership is confirmed, so a banned device that doesn't even own this
+// config still sees 403 not_owner rather than leaking its own ban status.
+async function requireOwnedConfig(db, theme, id, deviceToken) {
+  const device = await deviceFromToken(db, deviceToken, { register: false });
+  if (!device) {
+    throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
+  }
+
+  const row = await db
+    .prepare("SELECT * FROM configs WHERE theme = ? AND id = ? AND status = 'active'")
+    .bind(theme, id)
+    .first();
+  if (!row) {
+    throw new HttpError(404, "not_found", "Config not found.");
+  }
+
+  if (row.device_id !== device.id) {
+    throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
+  }
+
+  if (device.banned) {
+    throw new HttpError(403, "device_banned", "This device has been banned.");
+  }
+
+  return row;
+}
+
+async function updateConfig(request, env, theme, id) {
+  const body = await parseJsonBody(request);
+  const row = await requireOwnedConfig(env.DB, theme, id, body.device_token);
+
+  // Full replace: re-run the exact same metadata/payload/asset validation
+  // pipeline as share (#3) — see reconcileAssets above.
+  const meta = validateMeta({ name: body.name, author: body.author, description: body.description });
+  const payload = validatePayload(body.payload);
+  const resolvedAssets = await reconcileAssets(payload.assets, body.assets);
+
+  const canonicalPayload = canonicalJson(payload);
+  const hash = await contentHash(payload);
+
+  // Content-hash dedup against every OTHER active config (this row's own
+  // current hash is excluded, so keeping the payload unchanged is a no-op
+  // here, not a self-conflict).
+  const dup = await findDuplicateExcluding(env.DB, theme, hash, id);
+  if (dup) {
+    throw new HttpError(409, "duplicate_content", "Another config already has this content.");
+  }
+
+  // Assets diff: for each kind in the new manifest, keep the existing row
+  // as-is only if it was already 'approved' with the identical sha256;
+  // otherwise upsert it to 'pending' with the new sha256/size and queue a
+  // fresh R2 pending/ put. Kinds that existed before but are absent from the
+  // new manifest are dropped entirely (row + both R2 states).
+  const { results: existingAssetRows } = await env.DB
+    .prepare("SELECT kind, sha256, size, status FROM assets WHERE config_id = ?")
+    .bind(id)
+    .all();
+  const existingByKind = new Map(existingAssetRows.map((r) => [r.kind, r]));
+  const newKinds = new Set(resolvedAssets.map((a) => a.kind));
+
+  const statements = [];
+  const r2Puts = [];
+  const r2Deletes = [];
+  let anyPending = false;
+
+  for (const asset of resolvedAssets) {
+    const manifestItem = payload.assets.find((item) => item.kind === asset.kind);
+    const existing = existingByKind.get(asset.kind);
+    const kept = existing && existing.status === "approved" && existing.sha256 === manifestItem.sha256;
+
+    if (kept) continue;
+
+    anyPending = true;
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO assets (config_id, kind, r2_key, sha256, size, status)
+         VALUES (?, ?, ?, ?, ?, 'pending')
+         ON CONFLICT(config_id, kind) DO UPDATE SET
+           r2_key = excluded.r2_key, sha256 = excluded.sha256, size = excluded.size, status = 'pending'`
+      ).bind(id, asset.kind, r2Key("pending", id, asset.kind), manifestItem.sha256, manifestItem.size)
+    );
+    r2Puts.push(asset);
+  }
+
+  for (const [kind] of existingByKind) {
+    if (!newKinds.has(kind)) {
+      statements.push(env.DB.prepare("DELETE FROM assets WHERE config_id = ? AND kind = ?").bind(id, kind));
+      r2Deletes.push(r2Key("pending", id, kind), r2Key("approved", id, kind));
+    }
+  }
+
+  const assetsStatus = resolvedAssets.length === 0 ? "none" : anyPending ? "pending" : "approved";
+  const newVersion = row.version + 1;
+
+  statements.push(
+    env.DB.prepare(
+      `UPDATE configs
+         SET name = ?, author = ?, description = ?, payload = ?, content_hash = ?,
+             version = ?, assets_status = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    ).bind(meta.name, meta.author, meta.description, canonicalPayload, hash, newVersion, assetsStatus, id)
+  );
+
+  // R2 puts happen before the D1 batch, same orphan-tolerant ordering as
+  // share (#3): a failed batch leaves at most some unreferenced pending
+  // bytes behind, never a D1 row pointing at bytes that don't exist.
+  for (const asset of r2Puts) {
+    const key = r2Key("pending", id, asset.kind);
+    const options = {};
+    if (asset.kind === "login_bg") {
+      options.customMetadata = { format: asset.format };
+    }
+    await env.R2.put(key, asset.bytes, options);
+  }
+
+  try {
+    await env.DB.batch(statements);
+  } catch (err) {
+    // Race: another request committed the same (theme, content_hash) between
+    // our SELECT and this UPDATE — idx_configs_dedup rejects the batch.
+    const raced = await findDuplicateExcluding(env.DB, theme, hash, id);
+    if (raced) {
+      throw new HttpError(409, "duplicate_content", "Another config already has this content.");
+    }
+    throw err;
+  }
+
+  // R2 deletes for dropped kinds only happen after the D1 batch commits —
+  // deleting first and then losing the batch would strand a still-approved
+  // row pointing at bytes that no longer exist.
+  for (const key of r2Deletes) {
+    await env.R2.delete(key);
+  }
+
+  return jsonResponse({ id, version: newVersion });
+}
+
+async function deleteConfig(request, env, theme, id) {
+  const body = await parseJsonBody(request, SMALL_BODY_BYTES);
+  await requireOwnedConfig(env.DB, theme, id, body.device_token);
+
+  const { results: assetRows } = await env.DB
+    .prepare("SELECT kind FROM assets WHERE config_id = ?")
+    .bind(id)
+    .all();
+
+  // status='removed' frees this row's (theme, content_hash) slot in
+  // idx_configs_dedup (a partial unique index scoped to status='active'),
+  // so the exact same content can be re-shared afterwards without a
+  // duplicate_content conflict. dl_dedup/reports rows are left alone —
+  // history for an already-removed config is still meaningful.
+  await env.DB.batch([
+    env.DB.prepare("UPDATE configs SET status = 'removed', updated_at = datetime('now') WHERE id = ?").bind(id),
+    env.DB.prepare("DELETE FROM assets WHERE config_id = ?").bind(id),
+  ]);
+
+  for (const a of assetRows) {
+    await env.R2.delete(r2Key("pending", id, a.kind));
+    await env.R2.delete(r2Key("approved", id, a.kind));
+  }
+
+  return jsonResponse({ id, removed: true });
+}
+
+export async function handleUpdateConfig(request, env, params) {
+  try {
+    return await updateConfig(request, env, params.theme, params.id);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+export async function handleDeleteConfig(request, env, params) {
+  try {
+    return await deleteConfig(request, env, params.theme, params.id);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return errorResponse(err.status, err.code, err.message);
+    }
+    console.error(err);
+    return errorResponse(500, "internal_error", "Something went wrong.");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // #6 POST /themes/:theme/configs/:id/download
 // #7 POST /themes/:theme/configs/:id/report
 //

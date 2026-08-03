@@ -3,6 +3,8 @@ import {
   handleShare,
   handleListConfigs,
   handleConfigDetail,
+  handleUpdateConfig,
+  handleDeleteConfig,
   handleDownload,
   handleReport,
 } from "./configs.js";
@@ -52,6 +54,31 @@ router.add("POST", "/api/v1/themes/:theme/configs", async (request, env, params)
   }
 
   return handleShare(request, env, params);
+});
+
+// #4 PUT: same 12 MB cap as #3 share, since the body carries the same
+// shape (full payload + assets).
+router.add("PUT", "/api/v1/themes/:theme/configs/:id", async (request, env, params) => {
+  if (params.theme !== "aurora") {
+    await request.body?.cancel();
+    return errorResponse(404, "unknown_theme", "Unknown theme.");
+  }
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_BODY_BYTES) {
+    await request.body?.cancel();
+    return errorResponse(413, "too_large", "Request body exceeds the maximum size.");
+  }
+
+  return handleUpdateConfig(request, env, params);
+});
+
+// #5 DELETE: body is just {device_token}, handled with the small-body cap
+// inside handleDeleteConfig itself — no separate content-length fast path
+// needed here.
+router.add("DELETE", "/api/v1/themes/:theme/configs/:id", (request, env, params) => {
+  const rejected = requireAuroraTheme(params);
+  return rejected ?? handleDeleteConfig(request, env, params);
 });
 
 router.add("POST", "/api/v1/themes/:theme/configs/:id/download", (request, env, params) => {
