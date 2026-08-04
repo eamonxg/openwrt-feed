@@ -47,7 +47,7 @@ async function shareWithAssets({ token = makeToken(), name = "Config", assetSpec
       ...(assets.length ? { assets: assets.map((a) => a.body) } : {}),
     }),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   const body = await res.json();
   return { id: body.id, token, assets };
 }
@@ -127,7 +127,7 @@ describe("GET /api/v1/admin/pending", () => {
         payload: makePayload({ colors: { light_bg: "#200003" } }),
       }),
     });
-    expect(noAssetsRes.status).toBe(201);
+    expect(noAssetsRes.status).toBe(200);
 
     // Force a stable created_at order regardless of same-second timestamps.
     await env.DB.prepare("UPDATE configs SET created_at = ? WHERE id = ?")

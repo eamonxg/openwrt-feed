@@ -54,7 +54,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     expect(body).toEqual({ error: { code: "too_large", message: expect.any(String) } });
   });
 
-  it("a small chunked body with no Content-Length parses normally: 201", async () => {
+  it("a small chunked body with no Content-Length parses normally: 200", async () => {
     const token = makeToken();
     const json = JSON.stringify({
       device_token: token,
@@ -71,12 +71,12 @@ describe("POST /api/v1/themes/:theme/configs", () => {
 
     const res = await SELF.fetch(SHARE_URL, { method: "POST", body: stream, duplex: "half" });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ id: expect.any(String), manage: true });
   });
 
-  it("shares a config with no assets: 201, D1 row, assets_status='none'", async () => {
+  it("shares a config with no assets: 200, D1 row, assets_status='none'", async () => {
     const token = makeToken();
     const res = await shareRequest({
       device_token: token,
@@ -84,7 +84,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
       payload: makePayload(),
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ id: expect.any(String), manage: true });
 
@@ -102,7 +102,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     expect(row).not.toHaveProperty("author");
   });
 
-  it("shares a config with a PNG asset: 201, R2 object at pending/{id}/{kind}, assets_status='pending'", async () => {
+  it("shares a config with a PNG asset: 200, R2 object at pending/{id}/{kind}, assets_status='pending'", async () => {
     const token = makeToken();
     const asset = await makeAsset("favicon_png");
     const res = await shareRequest({
@@ -112,7 +112,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
       assets: [asset.body],
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const body = await res.json();
 
     const row = await env.DB.prepare("SELECT assets_status FROM configs WHERE id = ?").bind(body.id).first();
@@ -141,7 +141,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     const payload = makePayload({ colors: { light_bg: "#000001" } });
 
     const first = await shareRequest({ device_token: makeToken(), name: "First", payload });
-    expect(first.status).toBe(201);
+    expect(first.status).toBe(200);
     const firstBody = await first.json();
 
     const countBefore = await env.DB.prepare("SELECT COUNT(*) AS n FROM configs").first();
@@ -196,7 +196,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
         name: `Quota ${i}`,
         payload: makePayload({ colors: { light_bg: `#00000${i}` } }),
       });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
     }
 
     const eleventh = await shareRequest({
@@ -258,7 +258,7 @@ describe("POST /api/v1/themes/:theme/configs", () => {
       author: "Someone Else",
       payload: makePayload({ colors: { light_bg: "#0a0a0a" } }),
     });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const { id } = await res.json();
 
     const detail = await (await SELF.fetch(`${SHARE_URL}/${id}`)).json();

@@ -18,7 +18,7 @@ async function shareConfig(overrides = {}) {
       ...overrides,
     }),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   const body = await res.json();
   return body.id;
 }

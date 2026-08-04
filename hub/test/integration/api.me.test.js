@@ -25,7 +25,7 @@ async function share(token, name, tint) {
       payload: makePayload({ colors: { light_bg: tint } }),
     }),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   return (await res.json()).id;
 }
 

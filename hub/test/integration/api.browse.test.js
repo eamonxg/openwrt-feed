@@ -34,7 +34,7 @@ async function share(overrides = {}) {
       ...(overrides.assets ? { assets: overrides.assets } : {}),
     }),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   return (await res.json()).id;
 }
 
@@ -204,7 +204,7 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
         assets: [logo.body, favicon.body],
       }),
     });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const id = (await res.json()).id;
 
     // Both kinds are 'pending': nothing awaiting review may be advertised.
@@ -402,7 +402,7 @@ describe("GET /api/v1/themes/:theme/configs/:id (detail)", () => {
         assets: [asset.body],
       }),
     });
-    expect(res1.status).toBe(201);
+    expect(res1.status).toBe(200);
     const id2 = (await res1.json()).id;
 
     const pendingDetail = await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id2}`);

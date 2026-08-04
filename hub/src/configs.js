@@ -434,7 +434,14 @@ async function shareConfig(request, env, theme) {
     throw err;
   }
 
-  return jsonResponse({ id, manage: true }, { status: 201 });
+  // 200, not 201, for the same reason conflicts on /api/v1/me ride in the
+  // body: the only client is the router's rpcd, which reaches the hub through
+  // uclient-fetch. That tool reports any status other than 200 as a failed
+  // request and hands the caller nothing -- so a 201 made a perfectly
+  // successful publish surface in LuCI as "couldn't reach the theme store",
+  // while the config really had been created. Verified on the device: the
+  // duplicate path (200) succeeds, the fresh path (201) did not.
+  return jsonResponse({ id, manage: true });
 }
 
 export async function handleShare(request, env, params) {

@@ -43,7 +43,7 @@ async function shareWithAssets(assetSpecs, colorSeed) {
       assets: assets.map((a) => a.body),
     }),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   const id = (await res.json()).id;
   return { id, assets };
 }

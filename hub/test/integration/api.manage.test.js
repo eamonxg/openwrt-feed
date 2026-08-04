@@ -58,7 +58,7 @@ async function shareConfig({ token = makeToken(), name = "Original", payload = m
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  expect(res.status).toBe(201);
+  expect(res.status).toBe(200);
   const { id } = await res.json();
   return { id, token };
 }
@@ -506,7 +506,7 @@ describe("DELETE /api/v1/themes/:theme/configs/:id", () => {
       body: JSON.stringify({ device_token: makeToken(), name: "Reshared", payload }),
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.id).not.toBe(id);
   });
