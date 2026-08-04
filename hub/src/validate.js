@@ -323,3 +323,19 @@ export function validateMeta({ name, author, description } = {}) {
 
   return { name: cleanedName, author: cleanedAuthor, description: cleanedDescription };
 }
+
+export const NICKNAME_MAX = 40;
+
+// The trim is load-bearing: cleanText only strips control characters and
+// NFC-normalizes, so without it "Eamon " and "Eamon" fold to different
+// nickname_lc values and both could be claimed past idx_devices_nick.
+export function validateNickname(value) {
+  const badNickname = () =>
+    new HttpError(400, "invalid_nickname", `nickname must be 1-${NICKNAME_MAX} characters.`);
+
+  if (typeof value !== "string") throw badNickname();
+  const nickname = cleanText(value, badNickname).trim();
+  if (nickname.length < 1 || nickname.length > NICKNAME_MAX) throw badNickname();
+
+  return { nickname, nickname_lc: nickname.toLowerCase() };
+}

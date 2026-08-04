@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   validateMeta,
+  validateNickname,
   validatePayload,
   cleanText,
   COLOR_TOKENS,
@@ -726,5 +727,37 @@ describe("attack vectors", () => {
   it("rejects an oversized payload (>256KiB) as bad_schema", () => {
     const payload = buildPayload({ padding: "x".repeat(500 * 1024) });
     expectHttpError(() => validatePayload(payload), 400, "bad_schema");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("validateNickname", () => {
+  it("trims before folding, so a padded name cannot claim a second slot", () => {
+    expect(validateNickname("  Eamon  ")).toEqual({ nickname: "Eamon", nickname_lc: "eamon" });
+  });
+
+  it("keeps display casing but folds the uniqueness key", () => {
+    expect(validateNickname("EaMoN")).toEqual({ nickname: "EaMoN", nickname_lc: "eamon" });
+  });
+
+  it("strips control characters", () => {
+    expect(validateNickname("Ea\u0007mon").nickname).toBe("Eamon");
+  });
+
+  it("rejects an all-whitespace nickname", () => {
+    expectHttpError(() => validateNickname("   "), 400, "invalid_nickname");
+  });
+
+  it("rejects more than 40 characters", () => {
+    expectHttpError(() => validateNickname("a".repeat(41)), 400, "invalid_nickname");
+  });
+
+  it("accepts exactly 40 characters", () => {
+    expect(validateNickname("a".repeat(40)).nickname).toHaveLength(40);
+  });
+
+  it("rejects non-strings", () => {
+    expectHttpError(() => validateNickname(42), 400, "invalid_nickname");
   });
 });

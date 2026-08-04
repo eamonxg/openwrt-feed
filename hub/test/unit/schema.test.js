@@ -19,6 +19,11 @@ describe("schema", () => {
         banned: 0,
         quota_day: null,
         quota_used: 0,
+        // A device is a creator profile that has not been named yet. The
+        // unique index on nickname_lc is partial, so any number of rows may
+        // sit here with both columns null.
+        nickname: null,
+        nickname_lc: null,
       });
     });
   });
