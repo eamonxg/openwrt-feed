@@ -147,7 +147,7 @@ function parsePage(url) {
 // The 8-color list summary: light/dark each {bg, surface, text, brand},
 // pulled straight out of the stored (already-validated) payload's `colors`
 // section — never re-validated here.
-function extractPalette(payload) {
+export function extractPalette(payload) {
   const colors = payload.colors;
   const pick = (prefix) => ({
     bg: colors[`${prefix}_bg`],

@@ -8,6 +8,7 @@ import {
   handleDownload,
   handleReport,
 } from "./configs.js";
+import { handleMe } from "./me.js";
 import { handleAssetServe } from "./assets.js";
 import {
   handlePendingList,
@@ -24,6 +25,10 @@ import { jsonResponse, errorResponse, MAX_BODY_BYTES, CORS_HEADERS, withCors } f
 const router = createRouter();
 
 router.add("GET", "/api/v1/ping", () => jsonResponse({ pong: true }));
+
+// The creator profile. No :theme segment -- an account is not per-theme.
+// Body is just {device_token, nickname?}; handleMe applies its own small cap.
+router.add("POST", "/api/v1/me", (request, env) => handleMe(request, env));
 
 // Multi-theme ready routing: v1 only accepts "aurora" for every :theme route,
 // checked before the handler runs.
