@@ -13,7 +13,12 @@ async function share(overrides = {}) {
       device_token: makeToken(),
       name: overrides.name ?? "Config",
       author: overrides.author,
-      payload: makePayload({ colors: overrides.colors }),
+      payload: makePayload({
+        colors: overrides.colors,
+        layout: overrides.layout,
+        typography: overrides.typography,
+        toolbar: overrides.toolbar,
+      }),
       ...(overrides.assets ? { assets: overrides.assets } : {}),
     }),
   });
@@ -93,6 +98,77 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
     const body = await res.json();
     const item = body.items.find((i) => i.id === id);
+    expect(item.palette).toEqual({
+      light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
+      dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },
+    });
+  });
+
+  it("returns a preview projection that reuses the payload's own key names", async () => {
+    const id = await share({
+      name: "Preview",
+      colors: {
+        light_bg: "#111111",
+        light_surface: "#222222",
+        light_text: "#333333",
+        light_brand: "#444444",
+        dark_bg: "#555555",
+        dark_surface: "#666666",
+        dark_text: "#777777",
+        dark_brand: "#888888",
+      },
+      layout: { nav_type: "sidebar", struct_radius_base: "0.75rem" },
+      typography: { font_sans: "geist-sans", struct_font_sans: "Geist, sans-serif" },
+      toolbar: [
+        { title: "AdGuard", url: "https://example.com/adguard", icon: "shield.png", enabled: "1" },
+        { title: "Home", url: "/", enabled: "0" },
+      ],
+    });
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const body = await res.json();
+    const item = body.items.find((i) => i.id === id);
+
+    expect(item.schema).toBe(1);
+
+    // colors: exactly the 8 the card can draw, flat, named as in payload.colors.
+    expect(item.preview.colors).toEqual({
+      light_bg: "#111111",
+      light_surface: "#222222",
+      light_text: "#333333",
+      light_brand: "#444444",
+      dark_bg: "#555555",
+      dark_surface: "#666666",
+      dark_text: "#777777",
+      dark_brand: "#888888",
+    });
+
+    // layout / typography: whole sections, verbatim.
+    expect(item.preview.layout).toEqual({
+      nav_type: "sidebar",
+      struct_spacing: "0.25rem",
+      struct_radius_base: "0.75rem",
+      struct_content_width_centered: "80rem",
+      toolbar_enabled: "1",
+    });
+    expect(item.preview.typography).toEqual({
+      font_sans: "geist-sans",
+      font_mono: "jetbrains-mono",
+      struct_font_sans: "Geist, sans-serif",
+      struct_font_mono: "'Fira Code', monospace",
+    });
+
+    // toolbar: title/icon/enabled only — url is the bulk of the section and
+    // belongs to the detail path's external-link confirmation story.
+    expect(item.preview.toolbar).toEqual([
+      { title: "AdGuard", icon: "shield.png", enabled: "1" },
+      { title: "Home", enabled: "0" },
+    ]);
+
+    // A config with no approved assets carries an empty list, never undefined.
+    expect(item.preview.assets).toEqual([]);
+
+    // palette is deprecated but still present: 1.1.3 devices read it.
     expect(item.palette).toEqual({
       light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
       dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },

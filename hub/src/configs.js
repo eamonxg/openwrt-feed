@@ -144,6 +144,11 @@ function parsePage(url) {
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
+// DEPRECATED — kept for luci-app-aurora-config <= 1.1.3, which is live on
+// real devices and reads `item.palette`. Removing it would break those
+// installs outright. New clients read `item.preview.colors` instead (see
+// extractPreview below); this must not be deleted until that fleet is gone.
+//
 // The 8-color list summary: light/dark each {bg, surface, text, brand},
 // pulled straight out of the stored (already-validated) payload's `colors`
 // section — never re-validated here.
@@ -156,6 +161,55 @@ function extractPalette(payload) {
     brand: colors[`${prefix}_brand`],
   });
   return { light: pick("light"), dark: pick("dark") };
+}
+
+// The list row's `preview` is a STRUCTURAL SUBSET of the stored payload:
+// every retained field keeps payload's own name and type, there are just
+// fewer of them. That is the whole design rule — one client render path can
+// then consume `item.preview` (cards) and `item.payload` (detail drawer),
+// and adding a config field later means adding a line here rather than
+// inventing a new word in the API.
+//
+// Three deliberate reductions against the payload:
+//   - `colors`: 8 keys of 62. The full set is ~37KB per 24-row page and a
+//     card cannot draw a single one of the other 54.
+//   - `toolbar`: no `url`. It is capped at 200 chars and dominates the
+//     section's size; an off-box link also needs its own confirmation
+//     before applying, which is the detail path's job, not a card's.
+//   - `assets`: no `sha256`/`size` (those verify bytes at apply time), plus
+//     a `url`.
+//
+// Nothing here re-validates: the payload passed validate.js in full before
+// it was ever stored, so checking again would be duplicate work that hides
+// the real failure.
+const PREVIEW_COLOR_KEYS = [
+  "light_bg", "light_surface", "light_text", "light_brand",
+  "dark_bg", "dark_surface", "dark_text", "dark_brand",
+];
+
+// `assets` is NOT derived from `payload.assets`: that manifest lists what the
+// author uploaded, including bytes still awaiting review or already
+// rejected. Showing those as "included" would leak unreviewed content into
+// the browse surface. The caller passes the approved-only rows instead.
+function extractPreview(payload, assets) {
+  const colors = {};
+  for (const key of PREVIEW_COLOR_KEYS) colors[key] = payload.colors[key];
+
+  const toolbar = payload.toolbar.map((item) => {
+    const entry = { title: item.title, enabled: item.enabled };
+    // `icon` is optional in the payload; stay optional here too rather than
+    // materialising `icon: undefined`, so the shapes really do match.
+    if (item.icon !== undefined) entry.icon = item.icon;
+    return entry;
+  });
+
+  return {
+    colors,
+    layout: { ...payload.layout },
+    typography: { ...payload.typography },
+    toolbar,
+    assets,
+  };
 }
 
 async function listConfigs(request, env, theme) {
@@ -171,7 +225,7 @@ async function listConfigs(request, env, theme) {
   // Fetch one extra row (25) to determine has_more without a second COUNT(*)
   // query, then trim back to the page size below.
   const { results } = await env.DB.prepare(
-    `SELECT id, name, author, downloads, assets_status, created_at, payload
+    `SELECT id, name, author, downloads, assets_status, created_at, schema, payload
        FROM configs
       WHERE theme = ? AND status = 'active'
       ORDER BY ${orderBy}
@@ -181,15 +235,24 @@ async function listConfigs(request, env, theme) {
     .all();
 
   const has_more = results.length > PAGE_SIZE;
-  const items = results.slice(0, PAGE_SIZE).map((row) => ({
-    id: row.id,
-    name: row.name,
-    author: row.author,
-    downloads: row.downloads,
-    assets_status: row.assets_status,
-    created_at: row.created_at,
-    palette: extractPalette(JSON.parse(row.payload)),
-  }));
+  const items = results.slice(0, PAGE_SIZE).map((row) => {
+    // One parse per row feeds both projections — extending the response
+    // costs no extra read and no extra parse.
+    const payload = JSON.parse(row.payload);
+    return {
+      id: row.id,
+      name: row.name,
+      author: row.author,
+      downloads: row.downloads,
+      assets_status: row.assets_status,
+      created_at: row.created_at,
+      // Lets a client skip a row whose schema it cannot read, instead of
+      // rendering it wrong.
+      schema: row.schema,
+      palette: extractPalette(payload),
+      preview: extractPreview(payload, []),
+    };
+  });
 
   return jsonResponse({ items, page, has_more });
 }
