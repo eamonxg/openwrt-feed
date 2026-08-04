@@ -88,13 +88,28 @@ let token;
 if (existsSync(TOKEN_FILE)) token = readFileSync(TOKEN_FILE, "utf8").trim();
 else { token = randomBytes(32).toString("hex"); writeFileSync(TOKEN_FILE, token + "\n"); }
 
+// Signing is an account property, not a publish parameter: claim the name on
+// the seed device's profile once and every preset below is signed with it.
+// This is not cosmetic -- the store marks a config as an official built-in by
+// checking author === "Aurora" (gallery.js), and nicknames are first-come, so
+// this has to succeed before anyone else can take the name.
+if (!DRY) {
+  const meRes = await fetch(`${HUB}/api/v1/me`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ device_token: token, nickname: "Aurora" }),
+  });
+  const me = await meRes.json().catch(() => ({}));
+  if (me.error) throw new Error(`could not claim the "Aurora" nickname: ${me.error}`);
+  console.log(`seed profile: ${me.nickname} · #${me.id}`);
+}
+
 const results = [];
 for (const p of PRESETS) {
   const payload = buildPayload(p.id);
   const body = {
     device_token: token,
     name: `${p.name} · ${p.zh}`,
-    author: "Aurora",
     description: `Aurora built-in ${p.name} palette · Aurora 内置${p.zh}调色板`,
     payload,
     assets: [],
