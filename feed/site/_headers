@@ -16,6 +16,10 @@
 
 /manifest.json
   Cache-Control: public, max-age=600, must-revalidate
+  # Read cross-origin by luci-app-aurora-config: the settings page compares the
+  # installed version against this manifest from the browser, so the router
+  # itself never has to reach the network to know an update exists.
+  Access-Control-Allow-Origin: *
 
 /assets/*
   Cache-Control: public, max-age=604800

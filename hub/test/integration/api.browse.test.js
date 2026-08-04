@@ -25,7 +25,12 @@ async function share(overrides = {}) {
     body: JSON.stringify({
       device_token: token,
       name: overrides.name ?? "Config",
-      payload: makePayload({ colors: overrides.colors }),
+      payload: makePayload({
+        colors: overrides.colors,
+        layout: overrides.layout,
+        typography: overrides.typography,
+        toolbar: overrides.toolbar,
+      }),
       ...(overrides.assets ? { assets: overrides.assets } : {}),
     }),
   });
@@ -109,6 +114,162 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
       light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
       dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },
     });
+  });
+
+  it("returns a preview projection that reuses the payload's own key names", async () => {
+    const id = await share({
+      name: "Preview",
+      colors: {
+        light_bg: "#111111",
+        light_surface: "#222222",
+        light_text: "#333333",
+        light_brand: "#444444",
+        dark_bg: "#555555",
+        dark_surface: "#666666",
+        dark_text: "#777777",
+        dark_brand: "#888888",
+      },
+      layout: { nav_type: "sidebar", struct_radius_base: "0.75rem" },
+      typography: { font_sans: "geist-sans", struct_font_sans: "Geist, sans-serif" },
+      toolbar: [
+        { title: "AdGuard", url: "https://example.com/adguard", icon: "shield.png", enabled: "1" },
+        { title: "Home", url: "/", enabled: "0" },
+      ],
+    });
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const body = await res.json();
+    const item = body.items.find((i) => i.id === id);
+
+    expect(item.schema).toBe(1);
+
+    // colors: exactly the 8 the card can draw, flat, named as in payload.colors.
+    expect(item.preview.colors).toEqual({
+      light_bg: "#111111",
+      light_surface: "#222222",
+      light_text: "#333333",
+      light_brand: "#444444",
+      dark_bg: "#555555",
+      dark_surface: "#666666",
+      dark_text: "#777777",
+      dark_brand: "#888888",
+    });
+
+    // layout / typography: whole sections, verbatim.
+    expect(item.preview.layout).toEqual({
+      nav_type: "sidebar",
+      struct_spacing: "0.25rem",
+      struct_radius_base: "0.75rem",
+      struct_content_width_centered: "80rem",
+      toolbar_enabled: "1",
+    });
+    expect(item.preview.typography).toEqual({
+      font_sans: "geist-sans",
+      font_mono: "jetbrains-mono",
+      struct_font_sans: "Geist, sans-serif",
+      struct_font_mono: "'Fira Code', monospace",
+    });
+
+    // toolbar: title/icon/enabled only — url is the bulk of the section and
+    // belongs to the detail path's external-link confirmation story.
+    expect(item.preview.toolbar).toEqual([
+      { title: "AdGuard", icon: "shield.png", enabled: "1" },
+      { title: "Home", enabled: "0" },
+    ]);
+
+    // A config with no approved assets carries an empty list, never undefined.
+    expect(item.preview.assets).toEqual([]);
+
+    // palette is deprecated but still present: 1.1.3 devices read it.
+    expect(item.palette).toEqual({
+      light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
+      dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },
+    });
+  });
+
+  it("preview.assets lists approved kinds only, with the same relative url the detail endpoint uses", async () => {
+    const logo = await makeAsset("logo_svg", btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>'));
+    const favicon = await makeAsset("favicon_png");
+
+    const res = await SELF.fetch(SHARE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: makeToken(),
+        name: "WithAssets",
+        payload: makePayload({
+          colors: { light_bg: "#0f0f0f" },
+          assets: [logo.manifest, favicon.manifest],
+        }),
+        assets: [logo.body, favicon.body],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const id = (await res.json()).id;
+
+    // Both kinds are 'pending': nothing awaiting review may be advertised.
+    const pending = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const pendingItem = (await pending.json()).items.find((i) => i.id === id);
+    expect(pendingItem.assets_status).toBe("pending");
+    expect(pendingItem.preview.assets).toEqual([]);
+
+    // Approve one of the two: the list must show exactly that one, matching
+    // the detail endpoint's approved-only predicate.
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
+      .bind(id, "logo_svg")
+      .run();
+
+    const mixed = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const mixedItem = (await mixed.json()).items.find((i) => i.id === id);
+    expect(mixedItem.preview.assets).toEqual([{ kind: "logo_svg", url: `/assets/${id}/logo_svg` }]);
+
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
+      .bind(id, "favicon_png")
+      .run();
+
+    const bothRes = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const bothItem = (await bothRes.json()).items.find((i) => i.id === id);
+    // Sorted by kind, exactly as the detail endpoint's ORDER BY kind returns.
+    expect(bothItem.preview.assets).toEqual([
+      { kind: "favicon_png", url: `/assets/${id}/favicon_png` },
+      { kind: "logo_svg", url: `/assets/${id}/logo_svg` },
+    ]);
+
+    // No sha256/size on the list row — those are apply-time verification data.
+    expect(bothItem.preview.assets[0].sha256).toBeUndefined();
+    expect(bothItem.preview.assets[0].size).toBeUndefined();
+  });
+
+  it("the assets join never duplicates or drops a row", async () => {
+    const logo = await makeAsset("logo_svg", btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>'));
+    const favicon = await makeAsset("favicon_png");
+
+    const withAssets = await SELF.fetch(SHARE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: makeToken(),
+        name: "JoinHost",
+        payload: makePayload({
+          colors: { light_bg: "#1f1f1f" },
+          assets: [logo.manifest, favicon.manifest],
+        }),
+        assets: [logo.body, favicon.body],
+      }),
+    });
+    const withId = (await withAssets.json()).id;
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ?").bind(withId).run();
+
+    const bareId = await share({ name: "JoinBare", colors: { light_bg: "#2f2f2f" } });
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const items = (await res.json()).items;
+
+    // A LEFT JOIN without GROUP BY would emit the two-asset config twice; a
+    // plain JOIN would drop the asset-free one entirely.
+    expect(items.filter((i) => i.id === withId)).toHaveLength(1);
+    expect(items.filter((i) => i.id === bareId)).toHaveLength(1);
+    expect(items.find((i) => i.id === bareId).preview.assets).toEqual([]);
   });
 
   it("has_more:true when a 25th active config exists, and page 2 returns just the remainder", async () => {

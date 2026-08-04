@@ -144,6 +144,11 @@ function parsePage(url) {
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
+// DEPRECATED — kept for luci-app-aurora-config <= 1.1.3, which is live on
+// real devices and reads `item.palette`. Removing it would break those
+// installs outright. New clients read `item.preview.colors` instead (see
+// extractPreview below); this must not be deleted until that fleet is gone.
+//
 // The 8-color list summary: light/dark each {bg, surface, text, brand},
 // pulled straight out of the stored (already-validated) payload's `colors`
 // section — never re-validated here.
@@ -158,6 +163,70 @@ export function extractPalette(payload) {
   return { light: pick("light"), dark: pick("dark") };
 }
 
+// The list row's `preview` is a STRUCTURAL SUBSET of the stored payload:
+// every retained field keeps payload's own name and type, there are just
+// fewer of them. That is the whole design rule — one client render path can
+// then consume `item.preview` (cards) and `item.payload` (detail drawer),
+// and adding a config field later means adding a line here rather than
+// inventing a new word in the API.
+//
+// Three deliberate reductions against the payload:
+//   - `colors`: 8 keys of 62. The full set is ~37KB per 24-row page and a
+//     card cannot draw a single one of the other 54.
+//   - `toolbar`: no `url`. It is capped at 200 chars and dominates the
+//     section's size; an off-box link also needs its own confirmation
+//     before applying, which is the detail path's job, not a card's.
+//   - `assets`: no `sha256`/`size` (those verify bytes at apply time), plus
+//     a `url`.
+//
+// Nothing here re-validates: the payload passed validate.js in full before
+// it was ever stored, so checking again would be duplicate work that hides
+// the real failure.
+const PREVIEW_COLOR_KEYS = [
+  "light_bg", "light_surface", "light_text", "light_brand",
+  "dark_bg", "dark_surface", "dark_text", "dark_brand",
+];
+
+// `assets` is NOT derived from `payload.assets`: that manifest lists what the
+// author uploaded, including bytes still awaiting review or already
+// rejected. Showing those as "included" would leak unreviewed content into
+// the browse surface. The caller passes the approved-only rows instead.
+function extractPreview(payload, assets) {
+  const colors = {};
+  for (const key of PREVIEW_COLOR_KEYS) colors[key] = payload.colors[key];
+
+  const toolbar = payload.toolbar.map((item) => {
+    const entry = { title: item.title, enabled: item.enabled };
+    // `icon` is optional in the payload; stay optional here too rather than
+    // materialising `icon: undefined`, so the shapes really do match.
+    if (item.icon !== undefined) entry.icon = item.icon;
+    return entry;
+  });
+
+  return {
+    colors,
+    layout: { ...payload.layout },
+    typography: { ...payload.typography },
+    toolbar,
+    assets,
+  };
+}
+
+// GROUP_CONCAT gives back a comma-joined string (NULL when the LEFT JOIN
+// matched nothing) in an order SQLite does not define, so the kinds are
+// re-sorted here to match the detail endpoint's `ORDER BY kind`.
+//
+// The url stays RELATIVE, exactly like the detail endpoint's — the client
+// owns the hub base and prepends it. Returning an absolute url here would
+// bake this deployment's hostname into cached client data.
+function previewAssets(id, approvedKinds) {
+  return (approvedKinds ?? "")
+    .split(",")
+    .filter(Boolean)
+    .sort()
+    .map((kind) => ({ kind, url: `/assets/${id}/${kind}` }));
+}
+
 async function listConfigs(request, env, theme) {
   const url = new URL(request.url);
   const sort = parseSort(url);
@@ -168,6 +237,19 @@ async function listConfigs(request, env, theme) {
   // injection risk.
   const orderBy = sort === "new" ? "c.created_at DESC, c.id ASC" : "c.downloads DESC, c.id ASC";
 
+  // One LEFT JOIN + GROUP_CONCAT, never a per-row asset query: 24 rows would
+  // otherwise mean 25 round trips. LEFT (not inner) so a config with no
+  // assets — the common case — still appears; GROUP BY so a config with two
+  // approved kinds appears once, not twice.
+  //
+  // The `status = 'approved'` predicate sits in the JOIN condition, not the
+  // WHERE clause: in the WHERE clause it would turn the LEFT JOIN back into
+  // an inner one and silently hide every asset-free config.
+  //
+  // Same approved-only predicate as the detail endpoint below. They must not
+  // diverge — a list that counted pending or rejected assets would advertise
+  // unreviewed content as "included".
+  //
   // Fetch one extra row (25) to determine has_more without a second COUNT(*)
   // query, then trim back to the page size below.
   //
@@ -175,11 +257,18 @@ async function listConfigs(request, env, theme) {
   // config row: that is what makes a rename apply to everything the creator
   // has already published, and what stops anyone signing as someone else.
   const { results } = await env.DB.prepare(
-    `SELECT c.id, c.name, c.downloads, c.assets_status, c.created_at, c.payload,
-            d.id AS author_id, d.nickname AS author
+    // devices joins INNER (every config has an owner) while assets stays
+    // LEFT; grouping by c.id is still safe for d.id/d.nickname, since one
+    // config has exactly one owning device.
+    `SELECT c.id, c.name, c.downloads, c.assets_status, c.created_at,
+            c.schema, c.payload,
+            d.id AS author_id, d.nickname AS author,
+            GROUP_CONCAT(a.kind) AS approved_kinds
        FROM configs c
        JOIN devices d ON d.id = c.device_id
+       LEFT JOIN assets a ON a.config_id = c.id AND a.status = 'approved'
       WHERE c.theme = ? AND c.status = 'active'
+      GROUP BY c.id
       ORDER BY ${orderBy}
       LIMIT ? OFFSET ?`
   )
@@ -187,16 +276,26 @@ async function listConfigs(request, env, theme) {
     .all();
 
   const has_more = results.length > PAGE_SIZE;
-  const items = results.slice(0, PAGE_SIZE).map((row) => ({
-    id: row.id,
-    name: row.name,
-    author: row.author ?? "",
-    author_id: row.author_id,
-    downloads: row.downloads,
-    assets_status: row.assets_status,
-    created_at: row.created_at,
-    palette: extractPalette(JSON.parse(row.payload)),
-  }));
+  const items = results.slice(0, PAGE_SIZE).map((row) => {
+    // One parse per row feeds both projections — extending the response
+    // costs no extra read and no extra parse.
+    const payload = JSON.parse(row.payload);
+    return {
+      id: row.id,
+      name: row.name,
+      // Joined from the owner's profile; "" while that creator is unnamed.
+      author: row.author ?? "",
+      author_id: row.author_id,
+      downloads: row.downloads,
+      assets_status: row.assets_status,
+      created_at: row.created_at,
+      // Lets a client skip a row whose schema it cannot read, instead of
+      // rendering it wrong.
+      schema: row.schema,
+      palette: extractPalette(payload),
+      preview: extractPreview(payload, previewAssets(row.id, row.approved_kinds)),
+    };
+  });
 
   return jsonResponse({ items, page, has_more });
 }
