@@ -212,6 +212,21 @@ function extractPreview(payload, assets) {
   };
 }
 
+// GROUP_CONCAT gives back a comma-joined string (NULL when the LEFT JOIN
+// matched nothing) in an order SQLite does not define, so the kinds are
+// re-sorted here to match the detail endpoint's `ORDER BY kind`.
+//
+// The url stays RELATIVE, exactly like the detail endpoint's — the client
+// owns the hub base and prepends it. Returning an absolute url here would
+// bake this deployment's hostname into cached client data.
+function previewAssets(id, approvedKinds) {
+  return (approvedKinds ?? "")
+    .split(",")
+    .filter(Boolean)
+    .sort()
+    .map((kind) => ({ kind, url: `/assets/${id}/${kind}` }));
+}
+
 async function listConfigs(request, env, theme) {
   const url = new URL(request.url);
   const sort = parseSort(url);
@@ -220,14 +235,31 @@ async function listConfigs(request, env, theme) {
   // `sort` is one of exactly two hardcoded literals (never user-interpolated
   // beyond that ternary), so building the ORDER BY clause this way carries no
   // injection risk.
-  const orderBy = sort === "new" ? "created_at DESC, id ASC" : "downloads DESC, id ASC";
+  const orderBy = sort === "new" ? "c.created_at DESC, c.id ASC" : "c.downloads DESC, c.id ASC";
 
+  // One LEFT JOIN + GROUP_CONCAT, never a per-row asset query: 24 rows would
+  // otherwise mean 25 round trips. LEFT (not inner) so a config with no
+  // assets — the common case — still appears; GROUP BY so a config with two
+  // approved kinds appears once, not twice.
+  //
+  // The `status = 'approved'` predicate sits in the JOIN condition, not the
+  // WHERE clause: in the WHERE clause it would turn the LEFT JOIN back into
+  // an inner one and silently hide every asset-free config.
+  //
+  // Same approved-only predicate as the detail endpoint below. They must not
+  // diverge — a list that counted pending or rejected assets would advertise
+  // unreviewed content as "included".
+  //
   // Fetch one extra row (25) to determine has_more without a second COUNT(*)
   // query, then trim back to the page size below.
   const { results } = await env.DB.prepare(
-    `SELECT id, name, author, downloads, assets_status, created_at, schema, payload
-       FROM configs
-      WHERE theme = ? AND status = 'active'
+    `SELECT c.id, c.name, c.author, c.downloads, c.assets_status, c.created_at,
+            c.schema, c.payload,
+            GROUP_CONCAT(a.kind) AS approved_kinds
+       FROM configs c
+       LEFT JOIN assets a ON a.config_id = c.id AND a.status = 'approved'
+      WHERE c.theme = ? AND c.status = 'active'
+      GROUP BY c.id
       ORDER BY ${orderBy}
       LIMIT ? OFFSET ?`
   )
@@ -250,7 +282,7 @@ async function listConfigs(request, env, theme) {
       // rendering it wrong.
       schema: row.schema,
       palette: extractPalette(payload),
-      preview: extractPreview(payload, []),
+      preview: extractPreview(payload, previewAssets(row.id, row.approved_kinds)),
     };
   });
 

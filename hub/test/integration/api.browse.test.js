@@ -175,6 +175,91 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     });
   });
 
+  it("preview.assets lists approved kinds only, with the same relative url the detail endpoint uses", async () => {
+    const logo = await makeAsset("logo_svg", btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>'));
+    const favicon = await makeAsset("favicon_png");
+
+    const res = await SELF.fetch(SHARE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: makeToken(),
+        name: "WithAssets",
+        payload: makePayload({
+          colors: { light_bg: "#0f0f0f" },
+          assets: [logo.manifest, favicon.manifest],
+        }),
+        assets: [logo.body, favicon.body],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const id = (await res.json()).id;
+
+    // Both kinds are 'pending': nothing awaiting review may be advertised.
+    const pending = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const pendingItem = (await pending.json()).items.find((i) => i.id === id);
+    expect(pendingItem.assets_status).toBe("pending");
+    expect(pendingItem.preview.assets).toEqual([]);
+
+    // Approve one of the two: the list must show exactly that one, matching
+    // the detail endpoint's approved-only predicate.
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
+      .bind(id, "logo_svg")
+      .run();
+
+    const mixed = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const mixedItem = (await mixed.json()).items.find((i) => i.id === id);
+    expect(mixedItem.preview.assets).toEqual([{ kind: "logo_svg", url: `/assets/${id}/logo_svg` }]);
+
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
+      .bind(id, "favicon_png")
+      .run();
+
+    const bothRes = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const bothItem = (await bothRes.json()).items.find((i) => i.id === id);
+    // Sorted by kind, exactly as the detail endpoint's ORDER BY kind returns.
+    expect(bothItem.preview.assets).toEqual([
+      { kind: "favicon_png", url: `/assets/${id}/favicon_png` },
+      { kind: "logo_svg", url: `/assets/${id}/logo_svg` },
+    ]);
+
+    // No sha256/size on the list row — those are apply-time verification data.
+    expect(bothItem.preview.assets[0].sha256).toBeUndefined();
+    expect(bothItem.preview.assets[0].size).toBeUndefined();
+  });
+
+  it("the assets join never duplicates or drops a row", async () => {
+    const logo = await makeAsset("logo_svg", btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>'));
+    const favicon = await makeAsset("favicon_png");
+
+    const withAssets = await SELF.fetch(SHARE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: makeToken(),
+        name: "JoinHost",
+        payload: makePayload({
+          colors: { light_bg: "#1f1f1f" },
+          assets: [logo.manifest, favicon.manifest],
+        }),
+        assets: [logo.body, favicon.body],
+      }),
+    });
+    const withId = (await withAssets.json()).id;
+    await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ?").bind(withId).run();
+
+    const bareId = await share({ name: "JoinBare", colors: { light_bg: "#2f2f2f" } });
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
+    const items = (await res.json()).items;
+
+    // A LEFT JOIN without GROUP BY would emit the two-asset config twice; a
+    // plain JOIN would drop the asset-free one entirely.
+    expect(items.filter((i) => i.id === withId)).toHaveLength(1);
+    expect(items.filter((i) => i.id === bareId)).toHaveLength(1);
+    expect(items.find((i) => i.id === bareId).preview.assets).toEqual([]);
+  });
+
   it("has_more:true when a 25th active config exists, and page 2 returns just the remainder", async () => {
     const ids = [];
     for (let i = 0; i < 25; i++) {
