@@ -306,22 +306,20 @@ function sectionOrEmpty(payload, key) {
   return Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : [];
 }
 
-export function validateMeta({ name, author, description } = {}) {
+// Signing is an account property, resolved by JOIN at read time -- it is not
+// a publish parameter, so no author is accepted here. An older client that
+// still sends one is not an error: unknown keys are simply not read.
+export function validateMeta({ name, description } = {}) {
   if (typeof name !== "string") throw badMeta("name is required.");
   const cleanedName = cleanText(name, badMeta);
   if (cleanedName.length < 1 || cleanedName.length > 60) throw badMeta("name must be 1-60 characters.");
-
-  const rawAuthor = author ?? "";
-  if (typeof rawAuthor !== "string") throw badMeta("author must be a string.");
-  const cleanedAuthor = cleanText(rawAuthor, badMeta);
-  if (cleanedAuthor.length > 40) throw badMeta("author must be at most 40 characters.");
 
   const rawDescription = description ?? "";
   if (typeof rawDescription !== "string") throw badMeta("description must be a string.");
   const cleanedDescription = cleanText(rawDescription, badMeta);
   if (cleanedDescription.length > 500) throw badMeta("description must be at most 500 characters.");
 
-  return { name: cleanedName, author: cleanedAuthor, description: cleanedDescription };
+  return { name: cleanedName, description: cleanedDescription };
 }
 
 export const NICKNAME_MAX = 40;

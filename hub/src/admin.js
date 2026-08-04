@@ -57,11 +57,12 @@ async function listPending(request, env) {
   // per-asset `status` tells the console (and approveConfig below) which
   // kinds are actually pending.
   const { results } = await env.DB.prepare(
-    `SELECT c.id AS config_id, c.name, c.author, c.created_at,
+    `SELECT c.id AS config_id, c.name, c.created_at, d.nickname AS author,
             a.kind AS asset_kind, a.sha256 AS asset_sha256, a.size AS asset_size,
             a.status AS asset_status
        FROM configs c
        JOIN assets a ON a.config_id = c.id
+       JOIN devices d ON d.id = c.device_id
       WHERE c.assets_status = 'pending' AND c.status = 'active'
       ORDER BY c.created_at ASC, c.id ASC, a.kind ASC`
   ).all();
@@ -73,7 +74,7 @@ async function listPending(request, env) {
       entry = {
         config_id: row.config_id,
         name: row.name,
-        author: row.author,
+        author: row.author ?? "",
         created_at: row.created_at,
         assets: [],
       };

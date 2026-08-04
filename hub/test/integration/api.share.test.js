@@ -81,7 +81,6 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     const res = await shareRequest({
       device_token: token,
       name: "My Theme",
-      author: "Eamon",
       payload: makePayload(),
     });
 
@@ -89,15 +88,18 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     const body = await res.json();
     expect(body).toEqual({ id: expect.any(String), manage: true });
 
+    // No author column here any more -- the config row only records which
+    // device owns it, and the display name is joined from that device's
+    // profile at read time.
     const row = await env.DB.prepare("SELECT * FROM configs WHERE id = ?").bind(body.id).first();
     expect(row).toMatchObject({
       id: body.id,
       theme: "aurora",
       name: "My Theme",
-      author: "Eamon",
       assets_status: "none",
       status: "active",
     });
+    expect(row).not.toHaveProperty("author");
   });
 
   it("shares a config with a PNG asset: 201, R2 object at pending/{id}/{kind}, assets_status='pending'", async () => {
@@ -240,5 +242,39 @@ describe("POST /api/v1/themes/:theme/configs", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body).toEqual({ error: { code: "bad_asset", message: expect.any(String) } });
+  });
+
+  it("signs a config with the creator profile and ignores any author in the body", async () => {
+    const token = makeToken();
+    await SELF.fetch("https://example.com/api/v1/me", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_token: token, nickname: "Signed By Profile" }),
+    });
+
+    const res = await shareRequest({
+      device_token: token,
+      name: "Attributed",
+      author: "Someone Else",
+      payload: makePayload({ colors: { light_bg: "#0a0a0a" } }),
+    });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+
+    const detail = await (await SELF.fetch(`${SHARE_URL}/${id}`)).json();
+    expect(detail.author).toBe("Signed By Profile");
+    expect(detail.author_id).toBeTruthy();
+  });
+
+  it("signs an anonymous device with an empty author", async () => {
+    const res = await shareRequest({
+      device_token: makeToken(),
+      name: "Unsigned",
+      payload: makePayload({ colors: { light_bg: "#0b0b0b" } }),
+    });
+    const { id } = await res.json();
+
+    const detail = await (await SELF.fetch(`${SHARE_URL}/${id}`)).json();
+    expect(detail.author).toBe("");
   });
 });

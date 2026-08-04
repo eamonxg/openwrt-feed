@@ -6,13 +6,25 @@ const SHARE_URL = "https://example.com/api/v1/themes/aurora/configs";
 const LIST_URL = "https://example.com/api/v1/themes/aurora/configs";
 
 async function share(overrides = {}) {
+  const token = makeToken();
+
+  // Signing is an account property now, so a test that wants a named author
+  // has to claim the name on the profile first -- the publish body carries
+  // no author at all.
+  if (overrides.author) {
+    await SELF.fetch("https://example.com/api/v1/me", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_token: token, nickname: overrides.author }),
+    });
+  }
+
   const res = await SELF.fetch(SHARE_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      device_token: makeToken(),
+      device_token: token,
       name: overrides.name ?? "Config",
-      author: overrides.author,
       payload: makePayload({ colors: overrides.colors }),
       ...(overrides.assets ? { assets: overrides.assets } : {}),
     }),

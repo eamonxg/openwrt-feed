@@ -637,13 +637,20 @@ describe("validatePayload - assets", () => {
 
 describe("validateMeta", () => {
   it("passes through valid meta unchanged", () => {
-    const meta = validateMeta({ name: "My Theme", author: "Eamon", description: "A nice theme." });
-    expect(meta).toEqual({ name: "My Theme", author: "Eamon", description: "A nice theme." });
+    const meta = validateMeta({ name: "My Theme", description: "A nice theme." });
+    expect(meta).toEqual({ name: "My Theme", description: "A nice theme." });
   });
 
-  it("defaults author/description to empty string when absent", () => {
+  it("defaults description to empty string when absent", () => {
     const meta = validateMeta({ name: "My Theme" });
-    expect(meta).toEqual({ name: "My Theme", author: "", description: "" });
+    expect(meta).toEqual({ name: "My Theme", description: "" });
+  });
+
+  it("no longer accepts an author -- signing comes from the profile", () => {
+    expect(validateMeta({ name: "Fine", author: "ignored", description: "" })).toEqual({
+      name: "Fine",
+      description: "",
+    });
   });
 
   it("rejects an empty name", () => {
@@ -661,19 +668,6 @@ describe("validateMeta", () => {
 
   it("rejects a name of 61 characters", () => {
     expectHttpError(() => validateMeta({ name: "a".repeat(61) }), 400, "bad_meta");
-  });
-
-  it("accepts an author of exactly 40 characters", () => {
-    const meta = validateMeta({ name: "T", author: "a".repeat(40) });
-    expect(meta.author).toHaveLength(40);
-  });
-
-  it("rejects an author longer than 40 characters", () => {
-    expectHttpError(
-      () => validateMeta({ name: "T", author: "a".repeat(41) }),
-      400,
-      "bad_meta"
-    );
   });
 
   it("accepts a description of exactly 500 characters", () => {
