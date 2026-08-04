@@ -84,8 +84,14 @@ function buildPayload(id) {
   return { schema: 1, theme: "aurora", colors, layout, typography, toolbar, assets: [] };
 }
 
+// A dry run must not mint an identity. It used to: the token file was written
+// before the DRY check, so `--dry` left behind a brand-new seed token that
+// looked authoritative but owned nothing -- and using it later claimed the
+// "Aurora" nickname for an empty account, away from the device that actually
+// holds the presets.
 let token;
 if (existsSync(TOKEN_FILE)) token = readFileSync(TOKEN_FILE, "utf8").trim();
+else if (DRY) token = "0".repeat(64);
 else { token = randomBytes(32).toString("hex"); writeFileSync(TOKEN_FILE, token + "\n"); }
 
 // Signing is an account property, not a publish parameter: claim the name on
