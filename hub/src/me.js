@@ -10,6 +10,7 @@
 
 import { HttpError, deviceFromToken } from "./auth.js";
 import { extractPalette } from "./configs.js";
+import { validateNickname } from "./validate.js";
 import { jsonResponse, errorResponse, readJsonBounded } from "./http.js";
 
 const SMALL_BODY_BYTES = 4096;
@@ -19,10 +20,15 @@ const SMALL_BODY_BYTES = 4096;
 async function listOwnConfigs(db, deviceId) {
   const { results } = await db
     .prepare(
+      // rowid, not id, breaks the created_at tie: datetime('now') only has
+      // second resolution, so two configs published in the same second are
+      // indistinguishable by timestamp, and configs.id is a random shortId --
+      // ordering by it would scramble "newest first" at random. rowid is
+      // monotonic in insertion order, which is exactly the intent.
       `SELECT id, name, downloads, assets_status, status, created_at, payload
          FROM configs
         WHERE device_id = ?
-        ORDER BY created_at DESC, id ASC`
+        ORDER BY created_at DESC, rowid DESC`
     )
     .bind(deviceId)
     .all();
@@ -44,7 +50,10 @@ async function me(request, env) {
     throw new HttpError(400, "bad_json", "Request body must be a JSON object.");
   }
 
-  const device = await deviceFromToken(env.DB, body.device_token, { register: false });
+  // Registration only happens on a write: a plain profile read must never
+  // create a devices row, or every reflashed router would litter the table.
+  const wantsRename = body.nickname !== undefined;
+  const device = await deviceFromToken(env.DB, body.device_token, { register: wantsRename });
 
   // An imported backup whose account never published looks exactly like this.
   // It is a legitimate state, not a failure.
@@ -55,10 +64,56 @@ async function me(request, env) {
     throw new HttpError(403, "device_banned", "This device has been banned.");
   }
 
+  let profile = device;
+
+  if (wantsRename) {
+    let normalized;
+    try {
+      normalized = validateNickname(body.nickname);
+    } catch {
+      // Reported in-body for the same reason as nickname_taken; see the file
+      // header. The client already length-checks, so this is the belt.
+      return jsonResponse({
+        id: device.id,
+        nickname: device.nickname ?? null,
+        configs: [],
+        error: "invalid_nickname",
+      });
+    }
+
+    // Re-asserting the name you already hold is a no-op, not a conflict.
+    if (normalized.nickname_lc !== device.nickname_lc) {
+      const conflict = {
+        id: device.id,
+        nickname: device.nickname ?? null,
+        configs: [],
+        error: "nickname_taken",
+      };
+
+      const taken = await env.DB.prepare("SELECT id FROM devices WHERE nickname_lc = ?")
+        .bind(normalized.nickname_lc)
+        .first();
+      if (taken) return jsonResponse(conflict);
+
+      try {
+        await env.DB.prepare("UPDATE devices SET nickname = ?, nickname_lc = ? WHERE id = ?")
+          .bind(normalized.nickname, normalized.nickname_lc, device.id)
+          .run();
+      } catch {
+        // Race: another device claimed it between the SELECT and the UPDATE.
+        // idx_devices_nick is the actual arbiter; the SELECT is only a
+        // cheaper first pass.
+        return jsonResponse(conflict);
+      }
+
+      profile = { ...device, nickname: normalized.nickname, nickname_lc: normalized.nickname_lc };
+    }
+  }
+
   return jsonResponse({
-    id: device.id,
-    nickname: device.nickname ?? null,
-    configs: await listOwnConfigs(env.DB, device.id),
+    id: profile.id,
+    nickname: profile.nickname ?? null,
+    configs: await listOwnConfigs(env.DB, profile.id),
   });
 }
 
