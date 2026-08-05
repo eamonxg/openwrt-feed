@@ -100,6 +100,54 @@ run_install "" YES=1 PKGS="luci-theme-aurora luci-theme-shadcn" \
 assert_log "apk add luci-theme-aurora"
 assert_log "apk upgrade luci-theme-shadcn"
 
+# --- apk: an upgrade is preceded by an `add` that clears the world pin -------
+# apk records a checksum constraint in /etc/apk/world ("pkg><Q1...") for any
+# package installed from a local .apk file rather than by name from a
+# repository. That constraint is satisfied by the installed file, so
+# `apk upgrade <pkg>` finds nothing to do and still exits 0 — a silent no-op
+# the script would otherwise report as a successful upgrade. `apk add <pkg>`
+# updates the world constraint to the bare name, which restores normal version
+# tracking; the upgrade then behaves.
+setup_sandbox apk
+run_install "" YES=1 PKGS="luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-shadcn=1.0.3"
+order=$(grep -E '^apk (add|upgrade) ' "$tmp/log" | tr '\n' '|')
+[ "$order" = "apk add luci-theme-shadcn|apk upgrade luci-theme-shadcn|" ] \
+  || { echo "FAIL: apk upgrade not preceded by an unpinning add: $order"; fail=1; }
+
+# --- apk: a fresh install stays a single add --------------------------------
+# The install path already writes an unconstrained world entry, so adding an
+# upgrade behind it would be a pointless second transaction.
+setup_sandbox apk
+run_install "" YES=1 PKGS="luci-theme-aurora" FAKE_AVAIL="luci-theme-aurora=1.1.0"
+[ "$(grep -c '^apk add luci-theme-aurora$' "$tmp/log")" = 1 ] \
+  || { echo "FAIL: fresh install should issue exactly one apk add"; cat "$tmp/log"; fail=1; }
+refute_log "apk upgrade luci-theme-aurora"
+
+# --- opkg has no world, so it gains no unpinning step -----------------------
+setup_sandbox opkg
+run_install "" YES=1 PKGS="luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-shadcn=1.0.3"
+assert_log "opkg upgrade luci-theme-shadcn"
+refute_log "opkg install luci-theme-shadcn"
+
+# --- apk: the unpinning add is best effort, the upgrade decides the verdict --
+# If the add fails the upgrade is still attempted, and a genuinely broken
+# package is still reported as Failed rather than silently swallowed.
+setup_sandbox apk
+run_install "" YES=1 PKGS="luci-theme-shadcn" \
+  FAKE_INSTALLED="luci-theme-shadcn" \
+  FAKE_INSTALLED_VER="luci-theme-shadcn=1.0.1" \
+  FAKE_AVAIL="luci-theme-shadcn=1.0.3" \
+  FAKE_FAIL="luci-theme-shadcn"
+[ "$rc" != 0 ] || { echo "FAIL: a failed apk upgrade should exit non-zero"; echo "$out"; fail=1; }
+assert_log "apk upgrade luci-theme-shadcn"
+assert_out "Failed:"
+
 # --- an unknown name in PKGS is an error, and nothing is installed -----------
 setup_sandbox opkg
 run_install "" YES=1 PKGS="luci-theme-nope" FAKE_AVAIL="luci-theme-aurora=1.1.0"

@@ -185,6 +185,42 @@ confirm() { # <prompt> — auto-yes under YES=, otherwise read one line from fd 
   case "$reply" in n*|N*) return 1 ;; *) return 0 ;; esac
 }
 
+# unpin — clear an apk world constraint that would make the upgrade a no-op.
+#
+# apk records a package installed from a local file (`apk add ./foo.apk`, LuCI's
+# upload-a-package button, an image built by installing files) as a checksum
+# constraint in /etc/apk/world:
+#
+#   luci-app-aurora-config><Q1fucTFL1zNFoR3+oZeUvsEcJ2bd4=
+#
+# That constraint names one exact file, and the installed copy satisfies it. So
+# `apk upgrade <pkg>` has nothing to solve, changes nothing, and still exits 0 —
+# even a blanket `apk upgrade` skips the package. The user is left reading
+# "Upgraded:" over a version that did not move.
+#
+# `apk add <pkg>` "adds or updates given constraints to WORLD" (apk-add(8)), so
+# naming the package rewrites the constraint to the bare name and restores
+# normal version tracking — permanently, including for later upgrades run by
+# hand. It is a solve, not a download: with the constraint already bare it
+# changes nothing.
+#
+# Best effort on purpose. Its only job is to clear a constraint, so a failure
+# here must not decide the package's verdict — the upgrade that follows does
+# that, and reports honestly if the constraint turned out to be the blocker.
+#
+# Its output is deliberately NOT silenced. Committing world reconciles the
+# installed set against it, which can uninstall a package that is installed,
+# absent from world, and depended on by nothing. Measured on a live router: one
+# `apk add` took the box from 236 packages to 235 and removed a language pack
+# without naming it. A one-line "OK: ... in N packages" before each upgrade is a
+# cheap price for never hiding that.
+#
+# opkg has no equivalent construct, hence the apk guard.
+unpin() { # <pkg>
+  [ "$PM" = apk ] || return 0
+  apk add "$1" || true
+}
+
 # run_selection — install or upgrade every name in $SEL, one at a time.
 # Each call is guarded by `if`, which suspends `set -e`: a package that fails
 # must not abandon the ones behind it. Installing three packages and then dying
@@ -199,6 +235,9 @@ run_selection() {
     if is_installed "$p"; then verb=$UP; else verb=$ADD; fi
     echo ""
     echo "==> $PM $verb $p"
+    # Only on the upgrade path: the install path is already an `apk add`, which
+    # writes an unconstrained world entry by itself.
+    if [ "$verb" = "$UP" ]; then unpin "$p"; fi
     if "$PM" "$verb" "$p"; then
       if [ "$verb" = "$UP" ]; then did_up="$did_up $p"; else did_add="$did_add $p"; fi
     else
