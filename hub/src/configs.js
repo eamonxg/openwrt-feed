@@ -105,6 +105,22 @@ async function reconcileAssets(manifest, bodyAssets) {
   return resolved;
 }
 
+// 资产字节的来源被抽象成一个 writeTo：base64 单请求路径把内存里的字节写进
+// 去，草稿提交路径（drafts.js）则从 R2 的 draft/ 键流式拷过去。除此之外
+// D1 那一整套（内容去重、version+1、资产 diff）两条路完全共用 —— 抄一份的
+// 话迟早分叉，而分叉的那一半永远是没人测的那半。
+export function bytesSource(kind, bytes, format) {
+  return {
+    kind,
+    format,
+    writeTo(env, key) {
+      const options = {};
+      if (kind === "login_bg") options.customMetadata = { format };
+      return env.R2.put(key, bytes, options);
+    },
+  };
+}
+
 async function findDuplicate(db, theme, hash) {
   return db
     .prepare("SELECT id FROM configs WHERE theme = ? AND content_hash = ? AND status = 'active'")
@@ -367,6 +383,20 @@ async function shareConfig(request, env, theme) {
   const payload = validatePayload(body.payload);
   const resolvedAssets = await reconcileAssets(payload.assets, body.assets);
 
+  return insertConfigWithAssets(env, {
+    theme,
+    device,
+    meta,
+    payload,
+    sources: resolvedAssets.map((a) => bytesSource(a.kind, a.bytes, a.format)),
+  });
+}
+
+// Step ⑤/⑥, lifted out of shareConfig so the draft-commit path (drafts.js)
+// can reach the same D1 writes with bytes that live in R2 rather than in
+// memory. `sources` only has to be [{kind, format, writeTo(env, key)}] —
+// where the bytes come from is none of this function's business.
+export async function insertConfigWithAssets(env, { theme, device, meta, payload, sources }) {
   const canonicalPayload = canonicalJson(payload);
   const hash = await contentHash(payload);
 
@@ -378,18 +408,13 @@ async function shareConfig(request, env, theme) {
 
   // Step ⑥: insert configs + assets rows, R2 objects at pending/{id}/{kind}.
   const id = shortId();
-  const assetsStatus = resolvedAssets.length ? "pending" : "none";
+  const assetsStatus = sources.length ? "pending" : "none";
 
   // R2 puts happen before the D1 batch: if the batch fails, orphaned R2
   // objects are an acceptable cost, but a D1 row must never reference an
   // object that was never written.
-  for (const asset of resolvedAssets) {
-    const key = r2Key("pending", id, asset.kind);
-    const options = {};
-    if (asset.kind === "login_bg") {
-      options.customMetadata = { format: asset.format };
-    }
-    await env.R2.put(key, asset.bytes, options);
+  for (const source of sources) {
+    await source.writeTo(env, r2Key("pending", id, source.kind));
   }
 
   const statements = [
@@ -410,13 +435,13 @@ async function shareConfig(request, env, theme) {
     ),
   ];
 
-  for (const asset of resolvedAssets) {
-    const manifestItem = payload.assets.find((item) => item.kind === asset.kind);
+  for (const source of sources) {
+    const manifestItem = payload.assets.find((item) => item.kind === source.kind);
     statements.push(
       env.DB.prepare(
         `INSERT INTO assets (config_id, kind, r2_key, sha256, size, status)
          VALUES (?, ?, ?, ?, ?, 'pending')`
-      ).bind(id, asset.kind, r2Key("pending", id, asset.kind), manifestItem.sha256, manifestItem.size)
+      ).bind(id, source.kind, r2Key("pending", id, source.kind), manifestItem.sha256, manifestItem.size)
     );
   }
 
@@ -544,6 +569,20 @@ async function updateConfig(request, env, theme, id) {
   const payload = validatePayload(body.payload);
   const resolvedAssets = await reconcileAssets(payload.assets, body.assets);
 
+  return updateConfigWithAssets(env, {
+    theme,
+    row,
+    meta,
+    payload,
+    sources: resolvedAssets.map((a) => bytesSource(a.kind, a.bytes, a.format)),
+  });
+}
+
+// The whole second half of updateConfig, lifted out for the same reason
+// insertConfigWithAssets was: drafts.js commits an update through here with
+// sources whose bytes sit in R2, not in memory.
+export async function updateConfigWithAssets(env, { theme, row, meta, payload, sources }) {
+  const id = row.id;
   const canonicalPayload = canonicalJson(payload);
   const hash = await contentHash(payload);
 
@@ -565,16 +604,16 @@ async function updateConfig(request, env, theme, id) {
     .bind(id)
     .all();
   const existingByKind = new Map(existingAssetRows.map((r) => [r.kind, r]));
-  const newKinds = new Set(resolvedAssets.map((a) => a.kind));
+  const newKinds = new Set(sources.map((a) => a.kind));
 
   const statements = [];
   const r2Puts = [];
   const r2Deletes = [];
   let anyPending = false;
 
-  for (const asset of resolvedAssets) {
-    const manifestItem = payload.assets.find((item) => item.kind === asset.kind);
-    const existing = existingByKind.get(asset.kind);
+  for (const source of sources) {
+    const manifestItem = payload.assets.find((item) => item.kind === source.kind);
+    const existing = existingByKind.get(source.kind);
     const kept = existing && existing.status === "approved" && existing.sha256 === manifestItem.sha256;
 
     if (kept) continue;
@@ -586,9 +625,9 @@ async function updateConfig(request, env, theme, id) {
          VALUES (?, ?, ?, ?, ?, 'pending')
          ON CONFLICT(config_id, kind) DO UPDATE SET
            r2_key = excluded.r2_key, sha256 = excluded.sha256, size = excluded.size, status = 'pending'`
-      ).bind(id, asset.kind, r2Key("pending", id, asset.kind), manifestItem.sha256, manifestItem.size)
+      ).bind(id, source.kind, r2Key("pending", id, source.kind), manifestItem.sha256, manifestItem.size)
     );
-    r2Puts.push(asset);
+    r2Puts.push(source);
   }
 
   for (const [kind] of existingByKind) {
@@ -598,7 +637,7 @@ async function updateConfig(request, env, theme, id) {
     }
   }
 
-  const assetsStatus = resolvedAssets.length === 0 ? "none" : anyPending ? "pending" : "approved";
+  const assetsStatus = sources.length === 0 ? "none" : anyPending ? "pending" : "approved";
   const newVersion = row.version + 1;
 
   statements.push(
@@ -613,13 +652,8 @@ async function updateConfig(request, env, theme, id) {
   // R2 puts happen before the D1 batch, same orphan-tolerant ordering as
   // share (#3): a failed batch leaves at most some unreferenced pending
   // bytes behind, never a D1 row pointing at bytes that don't exist.
-  for (const asset of r2Puts) {
-    const key = r2Key("pending", id, asset.kind);
-    const options = {};
-    if (asset.kind === "login_bg") {
-      options.customMetadata = { format: asset.format };
-    }
-    await env.R2.put(key, asset.bytes, options);
+  for (const source of r2Puts) {
+    await source.writeTo(env, r2Key("pending", id, source.kind));
   }
 
   try {
