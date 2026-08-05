@@ -8,7 +8,7 @@ import {
   handleDownload,
   handleReport,
 } from "./configs.js";
-import { handleCreateDraft } from "./drafts.js";
+import { handleCreateDraft, handleDraftAssetPut } from "./drafts.js";
 import { handleMe } from "./me.js";
 import { handleAssetServe } from "./assets.js";
 import {
@@ -94,6 +94,18 @@ router.add("PUT", "/api/v1/themes/:theme/configs/:id", async (request, env, para
   }
 
   return handleUpdateConfig(request, env, params);
+});
+
+// 三段式发布的第二段：浏览器直接把资产字节送到这里。没有 :theme 段 ——
+// 票据已经把它绑死在一份具体草稿的一个槽上。这里只做粗筛（字体的 8MiB 是
+// 所有 kind 里最大的上限），精确的 size/sha256/magic 校验在 handler 里。
+router.add("PUT", "/api/v1/drafts/:draft_id/assets/:kind", async (request, env, params) => {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_BODY_BYTES) {
+    await request.body?.cancel();
+    return errorResponse(413, "too_large", "Request body exceeds the maximum size.");
+  }
+  return handleDraftAssetPut(request, env, params);
 });
 
 // #5 DELETE: body is just {device_token}, handled with the small-body cap

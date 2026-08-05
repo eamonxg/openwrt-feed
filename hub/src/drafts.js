@@ -143,3 +143,67 @@ async function createDraft(request, env, theme) {
 export const handleCreateDraft = wrap((request, env, params) =>
   createDraft(request, env, params.theme)
 );
+
+// ---------------------------------------------------------------------------
+// ② PUT /api/v1/drafts/:draft_id/assets/:kind — 浏览器直传的收字节端点
+// ---------------------------------------------------------------------------
+
+// 整条链路上唯一不认 device_token 的地方。票据把 (draft_id, kind, size,
+// sha256) 全钉死，所以即使它泄漏，攻击者能做的也只是把同一份字节再传一遍。
+async function putDraftAsset(request, env, draftId, kind) {
+  const secret = requireSecret(env);
+
+  const header = request.headers.get("Authorization") ?? "";
+  const [scheme, token] = header.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    throw new HttpError(403, "bad_ticket", "Upload ticket is missing, invalid, or expired.");
+  }
+  const claims = await verifyTicket(secret, token);
+
+  // 票据是对着某一份草稿的某一个槽签的。路径与它对不上就当没有票据 ——
+  // 否则一张 favicon 的票据能往 logo 槽里塞任意字节。
+  if (claims.draft_id !== draftId || claims.kind !== kind) {
+    throw new HttpError(403, "bad_ticket", "Upload ticket is missing, invalid, or expired.");
+  }
+
+  const limit = ASSET_SIZE_LIMITS[kind];
+  if (!limit) {
+    throw new HttpError(400, "bad_asset", "Unknown asset kind.");
+  }
+
+  const declared = request.headers.get("content-length");
+  if (declared !== null && Number(declared) !== claims.size) {
+    throw new HttpError(400, "asset_mismatch", `Size mismatch for ${kind}.`);
+  }
+
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength !== claims.size) {
+    throw new HttpError(400, "asset_mismatch", `Size mismatch for ${kind}.`);
+  }
+  if (bytes.byteLength > limit) {
+    throw new HttpError(413, "too_large", `Asset ${kind} exceeds the maximum size.`);
+  }
+
+  const hash = await sha256Hex(bytes);
+  if (hash !== claims.sha256) {
+    throw new HttpError(400, "asset_mismatch", `Hash mismatch for ${kind}.`);
+  }
+
+  const check = MAGIC_CHECKS[kind];
+  if (!check(bytes)) {
+    throw new HttpError(400, "bad_asset", `Asset ${kind} failed the magic-byte check.`);
+  }
+
+  // sha256 记进 customMetadata：提交时据此确认这份字节确实是 manifest 声明的
+  // 那一份，不必把 1.2MB 读回内存重算一遍。
+  const customMetadata = { sha256: hash };
+  if (kind === "login_bg") customMetadata.format = sniffLoginBgFormat(bytes);
+
+  await env.R2.put(r2Key("draft", draftId, kind), bytes, { customMetadata });
+
+  return jsonResponse({ kind, received: bytes.byteLength });
+}
+
+export const handleDraftAssetPut = wrap((request, env, params) =>
+  putDraftAsset(request, env, params.draft_id, params.kind)
+);
