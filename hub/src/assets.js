@@ -92,7 +92,11 @@ export function contentTypeFor(kind, sniffedJpeg) {
   return STATIC_CONTENT_TYPES[kind];
 }
 
-const R2_STATES = new Set(["pending", "approved"]);
+// "draft" is where a browser-direct upload lands before its config exists
+// (drafts.js): the config id is only minted at commit time, so the bytes
+// cannot be written straight to pending/. An R2 lifecycle rule expires the
+// draft/ prefix, which is why abandoned uploads need no application-level GC.
+const R2_STATES = new Set(["draft", "pending", "approved"]);
 
 export function r2Key(state, id, kind) {
   if (!R2_STATES.has(state)) {

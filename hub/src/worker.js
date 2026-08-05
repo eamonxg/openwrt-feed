@@ -8,6 +8,7 @@ import {
   handleDownload,
   handleReport,
 } from "./configs.js";
+import { handleCreateDraft } from "./drafts.js";
 import { handleMe } from "./me.js";
 import { handleAssetServe } from "./assets.js";
 import {
@@ -51,6 +52,13 @@ router.add("GET", "/api/v1/themes/:theme/configs/:id", (request, env, params) =>
 // No :theme segment (contract #8) — mounted at the worker level, already
 // covered by run_worker_first's "/assets/*" entry.
 router.add("GET", "/assets/:id/:kind", (request, env, params) => handleAssetServe(request, env, params));
+
+// 三段式发布的第一段（drafts.js）。挂在 configs 下而不是 /drafts，因为它
+// 需要 :theme；后两段不需要 —— 票据已经把它们绑死在一份具体草稿上。
+router.add("POST", "/api/v1/themes/:theme/configs/draft", (request, env, params) => {
+  const rejected = requireAuroraTheme(params);
+  return rejected ?? handleCreateDraft(request, env, params);
+});
 
 router.add("POST", "/api/v1/themes/:theme/configs", async (request, env, params) => {
   // Multi-theme ready routing: v1 only accepts "aurora". Checked before any
