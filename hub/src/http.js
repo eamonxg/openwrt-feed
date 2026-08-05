@@ -26,7 +26,11 @@ export function errorResponse(status, code, message) {
 export const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "Content-Type",
+  // Authorization is what a ticketed asset upload carries (see drafts.js).
+  // A browser sending it triggers a preflight, and a preflight that does not
+  // list the header here fails — so without this entry browser-direct upload
+  // never sends a single byte, no matter how correct the PUT handler is.
+  "access-control-allow-headers": "Content-Type, Authorization",
   "access-control-max-age": "86400",
 };
 
