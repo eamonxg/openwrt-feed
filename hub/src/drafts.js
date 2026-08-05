@@ -207,3 +207,109 @@ async function putDraftAsset(request, env, draftId, kind) {
 export const handleDraftAssetPut = wrap((request, env, params) =>
   putDraftAsset(request, env, params.draft_id, params.kind)
 );
+
+// ---------------------------------------------------------------------------
+// ③ POST /api/v1/drafts/:draft_id/commit
+// ---------------------------------------------------------------------------
+
+// 草稿里的字节搬到最终位置。R2 的 get -> put 走的是 body 流，1.2MB 的图不会
+// 被整个读进内存；sha256 在 PUT 时已经验过并记在 customMetadata 里，commit
+// 只核对那份记录，不重算。
+function draftSource(draftId, kind, format) {
+  return {
+    kind,
+    format,
+    async writeTo(env, key) {
+      const object = await env.R2.get(r2Key("draft", draftId, kind));
+      if (!object) {
+        throw new HttpError(409, "assets_incomplete", `Asset ${kind} was never uploaded.`);
+      }
+      const options = {};
+      if (kind === "login_bg") options.customMetadata = { format };
+      await env.R2.put(key, object.body, options);
+    },
+  };
+}
+
+async function commitDraft(request, env, draftId) {
+  const body = await parseJsonBody(request, DRAFT_BODY_MAX_BYTES);
+
+  const draft = await env.DB
+    .prepare("SELECT * FROM drafts WHERE id = ?")
+    .bind(draftId)
+    .first();
+  if (!draft) {
+    throw new HttpError(404, "not_found", "Draft not found.");
+  }
+
+  const device = await deviceFromToken(env.DB, body.device_token, { register: false });
+  if (!device) {
+    throw new HttpError(403, "not_owner", "Device is not the owner of this draft.");
+  }
+  if (device.banned) {
+    throw new HttpError(403, "device_banned", "This device has been banned.");
+  }
+  if (draft.device_id !== device.id) {
+    throw new HttpError(403, "not_owner", "Device is not the owner of this draft.");
+  }
+
+  const payload = JSON.parse(draft.payload);
+  const meta = { name: draft.name, description: draft.description };
+
+  // 每个 manifest 资产都必须已经躺在 draft/ 下，且 hash/size 与 manifest 一致。
+  // 缺一个就整单拒绝 —— 半套资产的配置发出去，别人套用时会拿到一张缺图。
+  const sources = [];
+  for (const item of payload.assets) {
+    const object = await env.R2.head(r2Key("draft", draftId, item.kind));
+    if (!object) {
+      throw new HttpError(409, "assets_incomplete", `Asset ${item.kind} was never uploaded.`);
+    }
+    if (object.customMetadata?.sha256 !== item.sha256 || object.size !== item.size) {
+      throw new HttpError(
+        400,
+        "asset_mismatch",
+        `Stored bytes do not match the manifest for ${item.kind}.`
+      );
+    }
+    sources.push(draftSource(draftId, item.kind, object.customMetadata?.format));
+  }
+
+  let response;
+  if (draft.target_id) {
+    // 建草稿时验过一次权，但那已经是最多半小时前的事：这条分享可能已经被删、
+    // 或者身份已经换过。落库前再验一次。
+    const row = await env.DB
+      .prepare("SELECT * FROM configs WHERE theme = ? AND id = ? AND status = 'active'")
+      .bind(draft.theme, draft.target_id)
+      .first();
+    if (!row) {
+      throw new HttpError(404, "not_found", "Config not found.");
+    }
+    if (row.device_id !== device.id) {
+      throw new HttpError(403, "not_owner", "Device is not the owner of this config.");
+    }
+    response = await updateConfigWithAssets(env, { theme: draft.theme, row, meta, payload, sources });
+  } else {
+    response = await insertConfigWithAssets(env, {
+      theme: draft.theme,
+      device,
+      meta,
+      payload,
+      sources,
+    });
+  }
+
+  // 草稿收尾：先删行（再次提交拿 404），再删字节。反过来的话，一次失败的删除
+  // 会留下一条指向空字节的草稿，第二次提交报的是 assets_incomplete，比 404
+  // 难懂得多。
+  await env.DB.prepare("DELETE FROM drafts WHERE id = ?").bind(draftId).run();
+  for (const item of payload.assets) {
+    await env.R2.delete(r2Key("draft", draftId, item.kind));
+  }
+
+  return response;
+}
+
+export const handleDraftCommit = wrap((request, env, params) =>
+  commitDraft(request, env, params.draft_id)
+);

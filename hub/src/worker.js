@@ -8,7 +8,7 @@ import {
   handleDownload,
   handleReport,
 } from "./configs.js";
-import { handleCreateDraft, handleDraftAssetPut } from "./drafts.js";
+import { handleCreateDraft, handleDraftAssetPut, handleDraftCommit } from "./drafts.js";
 import { handleMe } from "./me.js";
 import { handleAssetServe } from "./assets.js";
 import {
@@ -107,6 +107,12 @@ router.add("PUT", "/api/v1/drafts/:draft_id/assets/:kind", async (request, env, 
   }
   return handleDraftAssetPut(request, env, params);
 });
+
+// 三段式发布的第三段。body 只有 {device_token}，小到不需要 content-length
+// 前置闸 —— commitDraft 自己用 DRAFT_BODY_MAX_BYTES 兜住。
+router.add("POST", "/api/v1/drafts/:draft_id/commit", (request, env, params) =>
+  handleDraftCommit(request, env, params)
+);
 
 // #5 DELETE: body is just {device_token}, handled with the small-body cap
 // inside handleDeleteConfig itself — no separate content-length fast path
