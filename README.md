@@ -11,6 +11,39 @@ top-level directory is an independently deployed Cloudflare Worker:
 The real domain is never committed; workflows substitute it from repo
 variables (`FEED_HOST`, `HUB_HOST`).
 
+## `hub/` Worker secrets
+
+Neither is injected by CI — set them once per environment with
+`npx wrangler secret put <NAME> --config hub/wrangler.jsonc` (render the
+config first with `hub/scripts/render-config.sh`).
+
+| Secret | Without it |
+| --- | --- |
+| `ADMIN_TOKEN` | `/admin` and every `/api/v1/admin/*` route answers 500 `admin_disabled`. Fails closed on purpose: an empty expected value must never compare equal to an empty Bearer token. |
+| `TICKET_SECRET` | Browser-direct asset upload answers 500 `upload_disabled`. The single-request publish endpoint (`POST /api/v1/themes/:theme/configs`) keeps working, so an unset secret degrades rather than breaks. |
+
+Generate `TICKET_SECRET` with `head -c32 /dev/urandom | xxd -p -c64`. Rotating
+it invalidates outstanding upload tickets; they live 30 minutes, so a rotation
+can at worst make someone's in-flight publish fail and need retrying.
+
+## `hub/` R2 lifecycle
+
+The `themes-hub-assets` bucket needs one rule: **delete objects under the
+`draft/` prefix after 1 day**. Browser-direct uploads land there before their
+config exists, and an abandoned publish leaves those bytes behind — this rule
+is the only thing that reclaims them, there is no application-level GC.
+
+Dashboard: *R2 → themes-hub-assets → Settings → Object lifecycle rules → Add
+rule*, prefix `draft/`, delete after 1 day.
+
+Abandoned `drafts` rows are a few hundred bytes each and are left to
+accumulate; no Cron Trigger is worth the operational surface. Clear them by
+hand if they ever matter:
+
+```sql
+DELETE FROM drafts WHERE created_at < datetime('now', '-1 day');
+```
+
 ## Third-party assets
 
 Files in `feed/site/assets` that come from elsewhere, and the terms they

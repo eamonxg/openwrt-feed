@@ -12,7 +12,11 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             d1Databases: ["DB"],
             r2Buckets: ["R2"],
-            bindings: { TEST_MIGRATIONS: migrations, ADMIN_TOKEN: "test-admin-token" },
+            bindings: {
+              TEST_MIGRATIONS: migrations,
+              ADMIN_TOKEN: "test-admin-token",
+              TICKET_SECRET: "test-ticket-secret",
+            },
           },
         },
       },

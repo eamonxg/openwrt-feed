@@ -8,6 +8,7 @@ import {
   handleDownload,
   handleReport,
 } from "./configs.js";
+import { handleCreateDraft, handleDraftAssetPut, handleDraftCommit } from "./drafts.js";
 import { handleMe } from "./me.js";
 import { handleAssetServe } from "./assets.js";
 import {
@@ -52,6 +53,13 @@ router.add("GET", "/api/v1/themes/:theme/configs/:id", (request, env, params) =>
 // covered by run_worker_first's "/assets/*" entry.
 router.add("GET", "/assets/:id/:kind", (request, env, params) => handleAssetServe(request, env, params));
 
+// 三段式发布的第一段（drafts.js）。挂在 configs 下而不是 /drafts，因为它
+// 需要 :theme；后两段不需要 —— 票据已经把它们绑死在一份具体草稿上。
+router.add("POST", "/api/v1/themes/:theme/configs/draft", (request, env, params) => {
+  const rejected = requireAuroraTheme(params);
+  return rejected ?? handleCreateDraft(request, env, params);
+});
+
 router.add("POST", "/api/v1/themes/:theme/configs", async (request, env, params) => {
   // Multi-theme ready routing: v1 only accepts "aurora". Checked before any
   // body parsing, per contract.
@@ -87,6 +95,24 @@ router.add("PUT", "/api/v1/themes/:theme/configs/:id", async (request, env, para
 
   return handleUpdateConfig(request, env, params);
 });
+
+// 三段式发布的第二段：浏览器直接把资产字节送到这里。没有 :theme 段 ——
+// 票据已经把它绑死在一份具体草稿的一个槽上。这里只做粗筛（字体的 8MiB 是
+// 所有 kind 里最大的上限），精确的 size/sha256/magic 校验在 handler 里。
+router.add("PUT", "/api/v1/drafts/:draft_id/assets/:kind", async (request, env, params) => {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_BODY_BYTES) {
+    await request.body?.cancel();
+    return errorResponse(413, "too_large", "Request body exceeds the maximum size.");
+  }
+  return handleDraftAssetPut(request, env, params);
+});
+
+// 三段式发布的第三段。body 只有 {device_token}，小到不需要 content-length
+// 前置闸 —— commitDraft 自己用 DRAFT_BODY_MAX_BYTES 兜住。
+router.add("POST", "/api/v1/drafts/:draft_id/commit", (request, env, params) =>
+  handleDraftCommit(request, env, params)
+);
 
 // #5 DELETE: body is just {device_token}, handled with the small-body cap
 // inside handleDeleteConfig itself — no separate content-length fast path

@@ -20,8 +20,28 @@ describe("CORS", () => {
     expect(res.status).toBe(204);
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
     expect(res.headers.get("access-control-allow-methods")).toBe("GET, POST, PUT, DELETE, OPTIONS");
-    expect(res.headers.get("access-control-allow-headers")).toBe("Content-Type");
+    expect(res.headers.get("access-control-allow-headers")).toBe("Content-Type, Authorization");
     expect(res.headers.get("access-control-max-age")).toBe("86400");
+  });
+
+  it("allows Authorization on preflight so ticketed uploads can run", async () => {
+    // 资产直传带 Authorization: Bearer <ticket>，浏览器因此会先发 preflight。
+    // 不在 allow-headers 里放行的话，真实浏览器一次都传不出去 —— 而 SELF.fetch
+    // 不做 preflight，所以 draft-upload 那组测试是绿的也说明不了问题。
+    const res = await SELF.fetch("https://example.com/api/v1/drafts/ab12cd34/assets/login_bg", {
+      method: "OPTIONS",
+      headers: {
+        Origin: ORIGIN,
+        "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    });
+
+    expect(res.status).toBe(204);
+    const allowed = (res.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+    expect(allowed).toContain("authorization");
+    expect(allowed).toContain("content-type");
+    expect(res.headers.get("access-control-allow-methods")).toContain("PUT");
   });
 
   it("GET /api/v1/ping carries allow-origin", async () => {
