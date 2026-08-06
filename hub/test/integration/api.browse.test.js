@@ -51,6 +51,50 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     expect(await res.json()).toEqual({ error: { code: "unknown_theme", message: expect.any(String) } });
   });
 
+  // 这三条直接改写 assets_status 而不是走完整的上传+审核链路:被测的是列表
+  // 过滤本身,它只看这一个字段。setDownloadsAndCreatedAt 上面已是同样的做法。
+  it("keeps a config out of the list while its assets await review", async () => {
+    const visible = await share({ name: "Visible", colors: { light_bg: "#0a0001" } });
+    const queued = await share({ name: "Queued", colors: { light_bg: "#0a0002" } });
+    await env.DB.prepare("UPDATE configs SET assets_status = 'pending' WHERE id = ?")
+      .bind(queued)
+      .run();
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=new`);
+    expect(res.status).toBe(200);
+    const ids = (await res.json()).items.map((item) => item.id);
+    expect(ids).toContain(visible);
+    expect(ids).not.toContain(queued);
+  });
+
+  it("still serves a queued config through its detail endpoint", async () => {
+    const queued = await share({ name: "Queued", colors: { light_bg: "#0a0003" } });
+    await env.DB.prepare("UPDATE configs SET assets_status = 'pending' WHERE id = ?")
+      .bind(queued)
+      .run();
+
+    const res = await SELF.fetch(`${SHARE_URL}/${queued}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).id).toBe(queued);
+  });
+
+  it("lists approved and rejected configs like any other", async () => {
+    const approved = await share({ name: "Approved", colors: { light_bg: "#0a0004" } });
+    const rejected = await share({ name: "Rejected", colors: { light_bg: "#0a0005" } });
+    await env.DB.prepare("UPDATE configs SET assets_status = 'approved' WHERE id = ?")
+      .bind(approved)
+      .run();
+    // 被拒之后图片没了,但配置本身照样能用 —— 它等同于一条从没带过图的分享。
+    await env.DB.prepare("UPDATE configs SET assets_status = 'rejected' WHERE id = ?")
+      .bind(rejected)
+      .run();
+
+    const res = await SELF.fetch(`${LIST_URL}?sort=new`);
+    const ids = (await res.json()).items.map((item) => item.id);
+    expect(ids).toContain(approved);
+    expect(ids).toContain(rejected);
+  });
+
   it("orders hot by downloads DESC and new by created_at DESC; hides removed; empty page has_more:false", async () => {
     const idA = await share({ name: "A", colors: { light_bg: "#000001" } });
     const idB = await share({ name: "B", colors: { light_bg: "#000002" } });
@@ -207,24 +251,32 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     expect(res.status).toBe(200);
     const id = (await res.json()).id;
 
-    // Both kinds are 'pending': nothing awaiting review may be advertised.
+    // Both kinds are 'pending', and nothing awaiting review is advertised --
+    // which now means the config itself stays out of the list, not merely
+    // that its preview.assets comes back empty.
     const pending = await SELF.fetch(`${LIST_URL}?sort=hot`);
-    const pendingItem = (await pending.json()).items.find((i) => i.id === id);
-    expect(pendingItem.assets_status).toBe("pending");
-    expect(pendingItem.preview.assets).toEqual([]);
+    expect((await pending.json()).items.find((i) => i.id === id)).toBeUndefined();
 
-    // Approve one of the two: the list must show exactly that one, matching
-    // the detail endpoint's approved-only predicate.
+    // One of the two approved is still a 'pending' config: both approveConfig
+    // and the update flow recompute assets_status from what is left, so a
+    // half-cleared config keeps the value that hides it. The approved-only
+    // shape of the projection is asserted on the detail endpoint, which has
+    // no such gate.
     await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
       .bind(id, "logo_svg")
       .run();
 
     const mixed = await SELF.fetch(`${LIST_URL}?sort=hot`);
-    const mixedItem = (await mixed.json()).items.find((i) => i.id === id);
-    expect(mixedItem.preview.assets).toEqual([{ kind: "logo_svg", url: `/assets/${id}/logo_svg` }]);
+    expect((await mixed.json()).items.find((i) => i.id === id)).toBeUndefined();
 
+    // Everything cleared. approveConfig writes both tables, so mirror both --
+    // updating only `assets` leaves the config row saying 'pending' and the
+    // list rightly goes on hiding it.
     await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ? AND kind = ?")
       .bind(id, "favicon_png")
+      .run();
+    await env.DB.prepare("UPDATE configs SET assets_status = 'approved' WHERE id = ?")
+      .bind(id)
       .run();
 
     const bothRes = await SELF.fetch(`${LIST_URL}?sort=hot`);
@@ -258,7 +310,12 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
       }),
     });
     const withId = (await withAssets.json()).id;
+    // Both tables, the way approveConfig does it: with only `assets` updated
+    // the config row still reads 'pending' and never reaches the list.
     await env.DB.prepare("UPDATE assets SET status = 'approved' WHERE config_id = ?").bind(withId).run();
+    await env.DB.prepare("UPDATE configs SET assets_status = 'approved' WHERE id = ?")
+      .bind(withId)
+      .run();
 
     const bareId = await share({ name: "JoinBare", colors: { light_bg: "#2f2f2f" } });
 

@@ -266,6 +266,17 @@ async function listConfigs(request, env, theme) {
   // diverge — a list that counted pending or rejected assets would advertise
   // unreviewed content as "included".
   //
+  // 审核中的配置不进列表。资产要过审才公开,而一条配置的图片正是它区别于
+  // 别人的地方 —— 让它带着取不到的图先上架,别人套用后只会拿到一半的样子,
+  // 也没有任何一个界面能解释那一半去哪了。
+  //
+  // 谓词写 != 'pending' 而不是白名单 IN (...):将来若新增状态值,默认可见
+  // 比默认隐藏安全 —— 一条配置因为无人认识它的新状态而从商店里消失,比它
+  // 多显示一天难查得多。
+  //
+  // 详情接口不设这道闸:配置数据本身无害,资产本来就取不到,而作者要能预览
+  // 和更新自己那条待审的作品。
+  //
   // Fetch one extra row (25) to determine has_more without a second COUNT(*)
   // query, then trim back to the page size below.
   //
@@ -283,7 +294,7 @@ async function listConfigs(request, env, theme) {
        FROM configs c
        JOIN devices d ON d.id = c.device_id
        LEFT JOIN assets a ON a.config_id = c.id AND a.status = 'approved'
-      WHERE c.theme = ? AND c.status = 'active'
+      WHERE c.theme = ? AND c.status = 'active' AND c.assets_status != 'pending'
       GROUP BY c.id
       ORDER BY ${orderBy}
       LIMIT ? OFFSET ?`
