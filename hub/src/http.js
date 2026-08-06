@@ -94,3 +94,22 @@ export async function readJsonBounded(request, maxBytes) {
     throw new HttpError(400, "bad_json", "Request body must be valid JSON.");
   }
 }
+
+// The optional `{reason}` that purge and ban accept. Deliberately total: an
+// absent body, an empty body, a non-JSON body and a JSON body carrying no
+// `reason` string all mean the same thing — no reason given — and none of
+// them is an error. Both endpoints have always been called with no body at
+// all (the admin console's plain POST, and every existing test), and a
+// permanent delete that 400s because a piece of optional free text was
+// malformed is the worst possible way for it to fail. The reason is a note
+// for the audit log, never an input the action depends on.
+export async function readOptionalReason(request, maxBytes = 2048) {
+  let body;
+  try {
+    body = await readJsonBounded(request, maxBytes);
+  } catch {
+    return "";
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return "";
+  return typeof body.reason === "string" ? body.reason.trim() : "";
+}

@@ -88,6 +88,51 @@ describe("requireAdmin", () => {
   });
 });
 
+describe("requireAdmin actor resolution", () => {
+  function req(token) {
+    return new Request("https://example.com/api/v1/admin/pending", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  }
+
+  it("maps the legacy single token to the root actor", () => {
+    expect(requireAdmin(req("t"), { ADMIN_TOKEN: "t" })).toBe("root");
+  });
+
+  it("maps a named token to its name", () => {
+    const env = { ADMIN_TOKEN: "t", ADMIN_TOKENS: "alice:a-token,bob:b-token" };
+    expect(requireAdmin(req("a-token"), env)).toBe("alice");
+    expect(requireAdmin(req("b-token"), env)).toBe("bob");
+    expect(requireAdmin(req("t"), env)).toBe("root");
+  });
+
+  it("skips an entry whose actor name is not a plain identifier", () => {
+    // 名字会原样进 admin_actions.actor,所以带空格/标点的条目直接丢弃,
+    // 而不是让脏字符串进日志。
+    const env = { ADMIN_TOKENS: "not a name:x-token,ok:y-token" };
+    expect(() => requireAdmin(req("x-token"), env)).toThrow();
+    expect(requireAdmin(req("y-token"), env)).toBe("ok");
+  });
+
+  it("skips an entry with no separator at all", () => {
+    const env = { ADMIN_TOKEN: "t", ADMIN_TOKENS: "garbage" };
+    expect(() => requireAdmin(req("garbage"), env)).toThrow();
+    expect(requireAdmin(req("t"), env)).toBe("root");
+  });
+
+  it("fails closed when neither secret is set", () => {
+    expect(() => requireAdmin(req("anything"), {})).toThrow(
+      expect.objectContaining({ status: 500, code: "admin_disabled" })
+    );
+  });
+
+  it("rejects a token that matches nothing", () => {
+    expect(() => requireAdmin(req("nope"), { ADMIN_TOKEN: "t" })).toThrow(
+      expect.objectContaining({ status: 401, code: "unauthorized" })
+    );
+  });
+});
+
 describe("deviceFromToken", () => {
   it("throws HttpError(400, bad_token) for a malformed token", async () => {
     try {

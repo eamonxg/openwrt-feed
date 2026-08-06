@@ -48,8 +48,70 @@ describe("GET /admin — regression", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
     const body = await res.text();
-    expect(body).toContain("sanitizeSvg");
+    expect(body).toContain('<script type="module" src="/admin/app.js">');
   });
+});
+
+// ---------------------------------------------------------------------------
+// The admin console's subresources, resolved the way a browser resolves them.
+//
+// /admin is served by rewriting the SUBREQUEST path to /admin/ (worker.js) so
+// the client never sees a redirect — which means the browser's document URL
+// stays "/admin", with no trailing slash, and every relative reference in the
+// page resolves against THAT. A "./app.js" therefore becomes "/app.js" at
+// /admin and "/admin/app.js" at /admin/: the console loads from one entry URL
+// and comes up blank from the other, and nothing in the suite noticed, because
+// no test had ever fetched anything the page references.
+//
+// This checks the class rather than today's two filenames: whatever href/src
+// the served HTML carries gets resolved against the request URL with the same
+// URL algorithm a browser uses, then fetched. A 404 fails it, and so does a
+// text/html body — the assets binding answering a missing .js with an HTML
+// error page would otherwise look like a hit.
+// ---------------------------------------------------------------------------
+
+function referencedUrls(html) {
+  const refs = [];
+  const attrRe = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  let m;
+  while ((m = attrRe.exec(html)) !== null) {
+    const value = (m[1] ?? m[2]).trim();
+    if (!value) continue;
+    // In-page anchors and inline URIs are not network fetches.
+    if (value.startsWith("#")) continue;
+    if (/^(?:data|javascript|mailto|tel|blob):/i.test(value)) continue;
+    refs.push(value);
+  }
+  return refs;
+}
+
+describe("admin console subresources load from every entry URL", () => {
+  for (const entry of ["https://example.com/admin", "https://example.com/admin/"]) {
+    it(`${new URL(entry).pathname} — every href/src it references resolves to a real, non-HTML asset`, async () => {
+      const res = await SELF.fetch(entry, { redirect: "manual" });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/text\/html/);
+
+      const html = await res.text();
+      const refs = referencedUrls(html);
+      // A page that references nothing would pass the loop vacuously.
+      expect(refs).not.toEqual([]);
+
+      const broken = [];
+      for (const ref of refs) {
+        // new URL(ref, documentUrl) is exactly the resolution a browser
+        // performs — including the "/admin" vs "/admin/" base difference
+        // that is the whole point of this test.
+        const resolved = new URL(ref, entry).href;
+        const sub = await SELF.fetch(resolved, { redirect: "manual" });
+        const contentType = sub.headers.get("content-type") ?? "";
+        if (sub.status !== 200 || /text\/html/.test(contentType)) {
+          broken.push(`${ref} -> ${resolved} [${sub.status} ${contentType || "no content-type"}]`);
+        }
+      }
+      expect(broken).toEqual([]);
+    });
+  }
 });
 
 describe("Global Constraints — zero external references", () => {

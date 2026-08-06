@@ -128,14 +128,19 @@ export function r2Key(state, id, kind) {
 // ---------------------------------------------------------------------------
 
 async function serveAsset(env, id, kind) {
-  // The D1 row is the source of truth for "may this be served at all" — an
-  // asset is only ever public once its row's status flips to 'approved'
-  // (Task 9's approval flow). The R2 key itself is always recomputed as
-  // approved/{id}/{kind} here rather than trusted from the row's stored
-  // r2_key column, so serving never depends on that column having been
-  // rewritten by the (not-yet-built) approval flow.
+  // D1 行是「这份字节能不能公开」的唯一真相来源，判断由两部分组成：资产
+  // 自己过了审(assets.status)，且它所属的配置仍在架上(configs.status)。
+  //
+  // 后半条是 Task 1 补的。在此之前 takedown 会顺手删掉 assets 行，配置状态
+  // 因此从来不需要被检查；一旦下架改成保留字节以便恢复，缺了这个 JOIN 就
+  // 意味着被下架配置的字体和登录背景仍然人人可取。
+  //
+  // R2 key 始终就地重算成 approved/{id}/{kind}，而不信任行里存的 r2_key 列。
   const row = await env.DB.prepare(
-    "SELECT 1 FROM assets WHERE config_id = ? AND kind = ? AND status = 'approved'"
+    `SELECT 1 FROM assets a
+       JOIN configs c ON c.id = a.config_id
+      WHERE a.config_id = ? AND a.kind = ? AND a.status = 'approved'
+        AND c.status = 'active'`
   )
     .bind(id, kind)
     .first();

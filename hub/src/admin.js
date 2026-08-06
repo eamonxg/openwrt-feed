@@ -4,8 +4,9 @@
 // where the approve/reject/takedown/ban moderation actions happen.
 
 import { HttpError, requireAdmin } from "./auth.js";
+import { logAction } from "./admin-audit.js";
 import { sha256Hex } from "./ids.js";
-import { jsonResponse, errorResponse, readJsonBounded } from "./http.js";
+import { jsonResponse, errorResponse, readJsonBounded, readOptionalReason } from "./http.js";
 import {
   MAGIC_CHECKS,
   r2Key,
@@ -14,6 +15,7 @@ import {
   APPROVE_FROM_R2_KINDS,
 } from "./assets.js";
 import { ASSET_SIZE_LIMITS } from "./validate.js";
+import { softTakedown } from "./lifecycle.js";
 
 // Approve bodies carry base64 sanitized assets: all kinds together can
 // exceed the general 12 MB request cap once base64 overhead is counted (an
@@ -144,7 +146,7 @@ async function getPendingAsset(request, env, id, kind) {
 // ---------------------------------------------------------------------------
 
 async function approveConfig(request, env, id) {
-  requireAdmin(request, env);
+  const actor = requireAdmin(request, env);
 
   const config = await env.DB.prepare(
     "SELECT id FROM configs WHERE id = ? AND status = 'active' AND assets_status = 'pending'"
@@ -314,6 +316,8 @@ async function approveConfig(request, env, id) {
     await env.R2.delete(r2Key("pending", id, asset.kind));
   }
 
+  await logAction(env, actor, "approve", "config", id);
+
   return jsonResponse({ id, approved: true });
 }
 
@@ -322,7 +326,7 @@ async function approveConfig(request, env, id) {
 // ---------------------------------------------------------------------------
 
 async function rejectConfig(request, env, id) {
-  requireAdmin(request, env);
+  const actor = requireAdmin(request, env);
 
   const config = await env.DB.prepare(
     "SELECT id FROM configs WHERE id = ? AND status = 'active' AND assets_status = 'pending'"
@@ -363,50 +367,37 @@ async function rejectConfig(request, env, id) {
     .bind(newStatus, id)
     .run();
 
+  await logAction(env, actor, "reject", "config", id);
+
   return jsonResponse({ id, rejected: true });
 }
 
 // ---------------------------------------------------------------------------
 // #13 POST /api/v1/admin/configs/:id/takedown
-// #14 POST /api/v1/admin/devices/:device_id/ban (shares the same cascade)
+// #14 POST /api/v1/admin/devices/:device_id/ban (shares the same soft step)
 // ---------------------------------------------------------------------------
 
-// Fully removes one config: status='removed', every assets row dropped, and
-// every R2 object for it deleted in both states (an asset can be sitting in
-// either pending/ or approved/ — or, mid-update, technically neither if it
-// was already cleaned up — so both keys are always attempted; R2 delete of a
-// missing key is a no-op).
-async function cascadeRemoveConfig(env, id) {
-  const { results: assetRows } = await env.DB.prepare("SELECT kind FROM assets WHERE config_id = ?")
-    .bind(id)
-    .all();
-
-  await env.DB.batch([
-    env.DB.prepare("UPDATE configs SET status = 'removed', updated_at = datetime('now') WHERE id = ?").bind(id),
-    env.DB.prepare("DELETE FROM assets WHERE config_id = ?").bind(id),
-  ]);
-
-  for (const row of assetRows) {
-    await env.R2.delete(r2Key("pending", id, row.kind));
-    await env.R2.delete(r2Key("approved", id, row.kind));
-  }
-}
-
-async function takedownConfig(request, env, id) {
-  requireAdmin(request, env);
+async function takedownConfig(request, env, id, note = "") {
+  const actor = requireAdmin(request, env);
 
   const config = await env.DB.prepare("SELECT id FROM configs WHERE id = ? AND status = 'active'").bind(id).first();
   if (!config) {
     throw new HttpError(404, "not_found", "Config not found.");
   }
 
-  await cascadeRemoveConfig(env, id);
+  // 只是下架,不销毁字节 —— 永久删除是 admin-configs.js 里独立的一个动作,
+  // 且只对已下架的配置开放。
+  await softTakedown(env, id);
+  await logAction(env, actor, "takedown", "config", id, note);
 
   return jsonResponse({ id, removed: true });
 }
 
 async function banDevice(request, env, deviceId) {
-  requireAdmin(request, env);
+  const actor = requireAdmin(request, env);
+
+  // 与 purge 同一套可选理由(见 readOptionalReason):不发 body 依然合法。
+  const reason = await readOptionalReason(request);
 
   const device = await env.DB.prepare("SELECT id FROM devices WHERE id = ?").bind(deviceId).first();
   if (!device) {
@@ -423,8 +414,18 @@ async function banDevice(request, env, deviceId) {
 
   for (const row of activeConfigs) {
     // eslint-disable-next-line no-await-in-loop
-    await cascadeRemoveConfig(env, row.id);
+    await softTakedown(env, row.id);
+    // 每条被级联下架的配置各留一条自己的记录,并写明是谁的封禁带下来的。
+    // 只在 device 上记一条总数的话,日后翻某一条配置的历史会看到它凭空
+    // 消失、没有任何解释。
+    // eslint-disable-next-line no-await-in-loop
+    await logAction(env, actor, "takedown", "config", row.id, `banned device ${deviceId}`);
   }
+
+  // 级联数量是这条封禁做了什么的事实,理由是为什么做 —— 追加而不是替换,
+  // 两者都留下来。
+  const cascade = `cascaded takedown of ${activeConfigs.length} config(s)`;
+  await logAction(env, actor, "ban", "device", deviceId, reason ? `${cascade}; ${reason}` : cascade);
 
   return jsonResponse({ device_id: deviceId, banned: true, removed_configs: activeConfigs.length });
 }
@@ -436,15 +437,38 @@ async function banDevice(request, env, deviceId) {
 async function listReports(request, env) {
   requireAdmin(request, env);
 
+  // 举报行只有 config_id 的时候,处理它得先自己去查被举报的是哪份配置。
+  // LEFT JOIN 而非 INNER:reports.config_id 上没有外键,历史上可能存在指向
+  // 已不存在配置的记录,内连接会把它们静默吞掉 —— 而一条无法解释的举报正是
+  // 最需要被看见的。
   const { results } = await env.DB.prepare(
-    "SELECT id, config_id, reason, ip, created_at FROM reports WHERE resolved = 0 ORDER BY created_at DESC, id DESC"
+    `SELECT r.id, r.config_id, r.reason, r.ip, r.created_at,
+            c.name, c.status AS config_status, c.assets_status,
+            d.nickname AS author
+       FROM reports r
+       LEFT JOIN configs c ON c.id = r.config_id
+       LEFT JOIN devices d ON d.id = c.device_id
+      WHERE r.resolved = 0
+      ORDER BY r.created_at DESC, r.id DESC`
   ).all();
 
-  return jsonResponse({ items: results });
+  const items = results.map((row) => ({
+    id: row.id,
+    config_id: row.config_id,
+    reason: row.reason,
+    ip: row.ip,
+    created_at: row.created_at,
+    name: row.name ?? "",
+    config_status: row.config_status ?? "missing",
+    assets_status: row.assets_status ?? "",
+    author: row.author ?? "",
+  }));
+
+  return jsonResponse({ items });
 }
 
 async function resolveReport(request, env, rid) {
-  requireAdmin(request, env);
+  const actor = requireAdmin(request, env);
 
   const numericId = Number(rid);
   if (!Number.isInteger(numericId)) {
@@ -457,6 +481,8 @@ async function resolveReport(request, env, rid) {
   }
 
   await env.DB.prepare("UPDATE reports SET resolved = 1 WHERE id = ?").bind(numericId).run();
+
+  await logAction(env, actor, "resolve_report", "report", String(numericId));
 
   return jsonResponse({ id: numericId, resolved: true });
 }

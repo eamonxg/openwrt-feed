@@ -83,6 +83,18 @@ describe("admin routes require a valid Bearer token", () => {
     { method: "POST", path: "/api/v1/admin/devices/whatever/ban" },
     { method: "GET", path: "/api/v1/admin/reports" },
     { method: "POST", path: "/api/v1/admin/reports/1/resolve" },
+    // Tasks 3-8 added these; the sweep above predates them.
+    { method: "GET", path: "/api/v1/admin/configs" },
+    { method: "GET", path: "/api/v1/admin/configs/whatever" },
+    { method: "POST", path: "/api/v1/admin/configs/whatever/edit" },
+    { method: "POST", path: "/api/v1/admin/configs/whatever/restore" },
+    { method: "POST", path: "/api/v1/admin/configs/whatever/purge" },
+    { method: "GET", path: "/api/v1/admin/devices" },
+    { method: "GET", path: "/api/v1/admin/devices/whatever" },
+    { method: "POST", path: "/api/v1/admin/devices/whatever/unban" },
+    { method: "POST", path: "/api/v1/admin/devices/whatever/nickname/clear" },
+    { method: "GET", path: "/api/v1/admin/stats" },
+    { method: "GET", path: "/api/v1/admin/log" },
   ];
 
   for (const { method, path } of routes) {
@@ -684,7 +696,7 @@ describe("POST /api/v1/admin/configs/:id/reject", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/v1/admin/configs/:id/takedown", () => {
-  it("removes the config, deletes assets rows and both R2 states; public detail 404s", async () => {
+  it("removes the config from every public surface but leaves its assets row and R2 objects untouched", async () => {
     const { id } = await shareWithAssets({ assetSpecs: [{ kind: "favicon_png" }], colorSeed: "#240001" });
     await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
       method: "POST",
@@ -698,11 +710,18 @@ describe("POST /api/v1/admin/configs/:id/takedown", () => {
 
     const config = await configRow(id);
     expect(config.status).toBe("removed");
+    // Takedown alone never destroys bytes — that is Task 2's whole point.
+    expect(config.purged_at).toBeNull();
 
     const asset = await assetRow(id, "favicon_png");
-    expect(asset).toBeNull();
+    expect(asset).not.toBeNull();
+    expect(asset.status).toBe("approved");
 
-    expect(await env.R2.get(`approved/${id}/favicon_png`)).toBeNull();
+    // approved/ survives; pending/ was already gone from the approve step
+    // above and takedown has no reason to touch either.
+    const approvedObject = await env.R2.get(`approved/${id}/favicon_png`);
+    expect(approvedObject).not.toBeNull();
+    await approvedObject.arrayBuffer();
     expect(await env.R2.get(`pending/${id}/favicon_png`)).toBeNull();
 
     const detailRes = await SELF.fetch(`https://example.com/api/v1/themes/aurora/configs/${id}`);
@@ -729,7 +748,7 @@ describe("POST /api/v1/admin/configs/:id/takedown", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/v1/admin/devices/:device_id/ban", () => {
-  it("bans the device, removes all its active configs (both R2 states gone), and blocks future shares", async () => {
+  it("bans the device, soft-takes-down all its active configs (assets rows and R2 objects survive), and blocks future shares", async () => {
     const token = makeToken();
     // idA gets an approved asset (so the cascade's approved/ cleanup is
     // exercised too); idB is left with a still-pending one.
@@ -762,11 +781,24 @@ describe("POST /api/v1/admin/devices/:device_id/ban", () => {
 
     expect((await configRow(idA)).status).toBe("removed");
     expect((await configRow(idB)).status).toBe("removed");
+    expect((await configRow(idA)).purged_at).toBeNull();
+    expect((await configRow(idB)).purged_at).toBeNull();
 
-    expect(await env.R2.get(`approved/${idA}/favicon_png`)).toBeNull();
+    // idA's asset was already approved before the ban; idB's was still
+    // pending. Banning is reversible now, so both rows and both R2 objects
+    // must still be exactly where they were.
+    expect(await assetRow(idA, "favicon_png")).not.toBeNull();
+    expect(await assetRow(idB, "favicon_ico")).not.toBeNull();
+
+    const approvedA = await env.R2.get(`approved/${idA}/favicon_png`);
+    expect(approvedA).not.toBeNull();
+    await approvedA.arrayBuffer();
     expect(await env.R2.get(`pending/${idA}/favicon_png`)).toBeNull();
+
     expect(await env.R2.get(`approved/${idB}/favicon_ico`)).toBeNull();
-    expect(await env.R2.get(`pending/${idB}/favicon_ico`)).toBeNull();
+    const pendingB = await env.R2.get(`pending/${idB}/favicon_ico`);
+    expect(pendingB).not.toBeNull();
+    await pendingB.arrayBuffer();
 
     const listRes = await SELF.fetch("https://example.com/api/v1/themes/aurora/configs?sort=new");
     const listIds = (await listRes.json()).items.map((i) => i.id);
@@ -835,6 +867,10 @@ describe("admin reports", () => {
       reason: expect.any(String),
       ip: expect.any(String),
       created_at: expect.any(String),
+      name: "Config",
+      config_status: "active",
+      assets_status: "none",
+      author: expect.any(String),
     });
 
     const rid = mine[0].id;
@@ -856,6 +892,33 @@ describe("admin reports", () => {
   it("404 not_found when resolving a non-numeric report id", async () => {
     const res = await adminFetch("/api/v1/admin/reports/not-a-number/resolve", { method: "POST" });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /admin/reports carries enough context to act on", () => {
+  it("names the config and its status", async () => {
+    const { id } = await shareWithAssets({ name: "Reported Thing" });
+
+    const reported = await SELF.fetch(
+      `https://example.com/api/v1/themes/aurora/configs/${id}/report`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "not ok" }),
+      }
+    );
+    expect(reported.status).toBe(200);
+
+    const res = await SELF.fetch("https://example.com/api/v1/admin/reports", {
+      headers: ADMIN_HEADERS,
+    });
+    const body = await res.json();
+    const row = body.items.find((r) => r.config_id === id);
+
+    // 以前这里只有一串 config_id:处理举报得自己去猜被举报的是哪份配置。
+    expect(row.name).toBe("Reported Thing");
+    expect(row.config_status).toBe("active");
+    expect(typeof row.author).toBe("string");
   });
 });
 

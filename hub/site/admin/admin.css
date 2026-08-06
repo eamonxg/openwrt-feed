@@ -1,0 +1,201 @@
+  :root {
+    color-scheme: dark light;
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --panel-2: #232733;
+    --border: #333846;
+    --text: #e6e8ee;
+    --text-muted: #9aa1b1;
+    --accent: #5b8cff;
+    --danger: #ff5c5c;
+    --danger-bg: #3a1f22;
+    --ok: #57c97a;
+    --warn: #e8b74b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header.top h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header.top .status { font-size: 0.8rem; color: var(--text-muted); }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 0.4rem;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 0.4rem 0.8rem;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0a0e18; font-weight: 600; }
+  button.danger { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+  input[type="text"], input[type="password"] {
+    font: inherit;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 0.4rem;
+    padding: 0.45rem 0.6rem;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+  #login-view { max-width: 360px; margin: 4rem auto; padding: 1.5rem; background: var(--panel); border: 1px solid var(--border); border-radius: 0.6rem; }
+  #login-view h2 { margin-top: 0; font-size: 1.1rem; }
+  #login-view form { display: flex; flex-direction: column; gap: 0.6rem; }
+  #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.2em; }
+  section.block { margin-bottom: 2rem; }
+  section.block h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .card-head h3 { margin: 0; font-size: 1rem; }
+  .card-head .meta { font-size: 0.8rem; color: var(--text-muted); }
+  .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+  .asset-tile { border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.5rem; background: var(--panel-2); font-size: 0.75rem; }
+  .asset-tile .kind { font-weight: 600; display: block; margin-bottom: 0.35rem; }
+  .asset-tile .preview { display: flex; align-items: center; justify-content: center; height: 72px; background: repeating-conic-gradient(#2a2e38 0% 25%, #232631 0% 50%) 50% / 16px 16px; border-radius: 0.35rem; overflow: hidden; margin-bottom: 0.35rem; }
+  .asset-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .asset-tile .font-sample { font-size: 1.1rem; color: var(--text); text-align: center; }
+  .asset-tile .state-ok { color: var(--ok); }
+  .asset-tile .state-error { color: var(--danger); word-break: break-word; }
+  .asset-tile .state-pending { color: var(--text-muted); }
+  .card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .empty { color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
+  .inline-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  table.reports { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.reports th, table.reports td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+  [hidden] { display: none !important; }
+
+  header.top .spacer { flex: 1; }
+
+  nav.stats { display: flex; gap: 0.75rem; }
+  nav.stats button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.2rem 0.4rem;
+    font-size: 0.85rem;
+  }
+  nav.stats button:hover { color: var(--text); }
+  nav.stats button strong { color: var(--text); }
+  nav.stats button.alert strong { color: var(--warn); }
+
+  nav.tabs { display: flex; gap: 0.25rem; padding: 0.5rem 1.25rem 0; border-bottom: 1px solid var(--border); }
+  nav.tabs .tab { border-radius: 0.4rem 0.4rem 0 0; border-bottom: none; }
+  nav.tabs .tab[aria-selected="true"] { background: var(--panel); border-color: var(--accent); }
+
+  .toolbar { display: flex; gap: 0.5rem; padding: 0.75rem 1.25rem; align-items: center; }
+  .toolbar input[type="text"] { flex: 1; max-width: 24rem; }
+
+  table.rows { width: 100%; border-collapse: collapse; }
+  table.rows th, table.rows td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  table.rows tbody tr:hover { background: var(--panel); cursor: pointer; }
+  table.rows td code { font-size: 0.8rem; color: var(--text-muted); }
+  /* 举报和日志的行不是可点的整体(动作各自在按钮上),所以别给它们指针光标 ——
+     一个看起来能点、点下去没反应的行是在说谎。 */
+  table.rows.plain tbody tr:hover { background: none; cursor: default; }
+  table.rows.plain .card-actions { margin-top: 0; flex-wrap: nowrap; }
+
+  .swatch { width: 1.5rem; height: 1.5rem; border-radius: 0.25rem; border: 1px solid var(--border); }
+
+  .badge { font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid; }
+  .badge.active { color: var(--ok); border-color: var(--ok); }
+  .badge.pending { color: var(--warn); border-color: var(--warn); }
+  .badge.removed { color: var(--text-muted); border-color: var(--border); }
+  .badge.purged { color: var(--danger); border-color: var(--danger); }
+  .name-purged { text-decoration: line-through; color: var(--text-muted); }
+
+  .pager { display: flex; gap: 0.75rem; align-items: center; justify-content: center; padding: 1rem; }
+
+  /* 日志不在那三个 tab 里,进去以后它们全部不高亮 —— 这个按钮得自己亮起来,
+     不然导航看起来像坏了。 */
+  #log-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+
+  /* 创作者详情的头部与抽屉头部同构:标题一行,元信息一行,动作一行。 */
+  .detail-head { display: grid; gap: 0.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .detail-title { display: flex; align-items: center; gap: 0.6rem; }
+  .detail-title h2 { margin: 0; font-size: 1.1rem; }
+  table.rows.plain .report-reason { max-width: 20rem; }
+
+  .drawer { position: fixed; inset: 0; z-index: 20; }
+  .drawer-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+  .drawer-panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: min(40rem, 100%);
+    background: var(--bg); border-left: 1px solid var(--border);
+    overflow-y: auto; padding: 1.25rem;
+  }
+  .drawer-panel pre { white-space: pre-wrap; word-break: break-word; }
+
+  .drawer-head { display: grid; gap: 0.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .drawer-title { display: flex; align-items: center; gap: 0.6rem; }
+  .drawer-title .drawer-name { flex: 1; margin: 0; min-width: 0; }
+  .drawer-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
+  .drawer-meta code { font-size: 0.8rem; }
+  /* 关闭挨着标题,是这一行里最不重要的东西:和其余按钮同一套边框和圆角,
+     但静止时收成灰的,免得它比抽屉里真正的动作还显眼。 */
+  .drawer-close { flex: none; color: var(--text-muted); padding: 0.25rem 0.6rem; font-size: 0.85rem; }
+  .drawer-close:hover:not(:disabled) { color: var(--text); }
+
+  /* 标题看起来是标题,点下去才是输入框 —— 改名是件小事,不该长得像一个动作。 */
+  .name-button {
+    background: none; border: 1px solid transparent; color: var(--text);
+    font-size: 1.1rem; font-weight: 600; padding: 0.1rem 0.3rem; margin-left: -0.3rem;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .name-button:hover:not(:disabled) { border-color: var(--border); background: var(--panel-2); }
+  .drawer-name input[type="text"] { width: 100%; font-size: 1.1rem; font-weight: 600; }
+
+  button.link { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
+  button.link:hover:not(:disabled) { color: var(--text); }
+
+  .drawer-section { margin-top: 1.25rem; }
+  .drawer-section h3 {
+    margin: 0 0 0.5rem; font-size: 0.8rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-muted);
+  }
+
+  .report-list, .history-list { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+  .report-list li {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+  }
+  .report-reason { word-break: break-word; }
+  .history-list li {
+    display: grid; grid-template-columns: 6rem 7rem 1fr auto; gap: 0.6rem;
+    padding: 0.35rem 0; border-bottom: 1px solid var(--border);
+  }
+  .history-list li > span { overflow: hidden; text-overflow: ellipsis; }
+  .history-actor { color: var(--text-muted); }
+  .history-action { font-weight: 600; }
+  .history-note { color: var(--text-muted); word-break: break-word; }
+  .muted { color: var(--text-muted); }
+
+  .confirm-box {
+    position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+    width: min(28rem, 90%); background: var(--panel); border: 1px solid var(--danger);
+    border-radius: 0.6rem; padding: 1.25rem; display: grid; gap: 0.75rem;
+  }
+  .confirm-box h3 { margin: 0; }
+  .confirm-box p { margin: 0; font-size: 0.85rem; }
+  .confirm-box .card-actions { justify-content: flex-end; margin-top: 0.25rem; }

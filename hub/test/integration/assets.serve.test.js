@@ -17,6 +17,8 @@ const JPEG_BASE64 = bytesToBase64(JPEG_BYTES);
 const SVG_TEXT = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
 const SVG_BASE64 = btoa(SVG_TEXT);
 
+const LOGO_SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
+
 function base64ToBytes(b64) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -138,5 +140,39 @@ describe("GET /assets/:id/:kind", () => {
     const pngRes = await SELF.fetch(`https://example.com/assets/${id}/favicon_png`);
     expect(pngRes.status).toBe(404);
     await pngRes.json();
+  });
+
+  it("a removed config's approved asset is no longer served", async () => {
+    const token = makeToken();
+    const asset = await makeAsset("logo_svg", LOGO_SVG_BASE64);
+    const shared = await SELF.fetch("https://example.com/api/v1/themes/aurora/configs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        device_token: token,
+        name: "Removable",
+        payload: makePayload({ assets: [asset.manifest] }),
+        assets: [asset.body],
+      }),
+    });
+    expect(shared.status).toBe(200);
+    const { id } = await shared.json();
+
+    // 直接把 assets 行推到 approved 并写好 R2 对象，跳过整套审核流程——
+    // 这条用例要验的是配置状态这道闸，不是审核流程本身。
+    await env.R2.put(`approved/${id}/logo_svg`, base64ToBytes(LOGO_SVG_BASE64));
+    await env.DB.prepare(
+      "UPDATE assets SET status = 'approved', r2_key = ? WHERE config_id = ? AND kind = 'logo_svg'"
+    ).bind(`approved/${id}/logo_svg`, id).run();
+
+    const before = await SELF.fetch(`https://example.com/assets/${id}/logo_svg`);
+    expect(before.status).toBe(200);
+    await before.arrayBuffer();
+
+    await env.DB.prepare("UPDATE configs SET status = 'removed' WHERE id = ?").bind(id).run();
+
+    const after = await SELF.fetch(`https://example.com/assets/${id}/logo_svg`);
+    expect(after.status).toBe(404);
+    await after.json();
   });
 });

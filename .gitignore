@@ -5,3 +5,4 @@ wrangler.jsonc
 hub/wrangler.jsonc
 docs/superpowers/
 hub/scripts/seed-device-token.txt
+.superpowers/

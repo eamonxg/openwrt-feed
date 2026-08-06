@@ -15,6 +15,7 @@ export default defineWorkersConfig(async () => {
             bindings: {
               TEST_MIGRATIONS: migrations,
               ADMIN_TOKEN: "test-admin-token",
+              ADMIN_TOKENS: "alice:alice-token,bob:bob-token",
               TICKET_SECRET: "test-ticket-secret",
             },
           },

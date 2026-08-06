@@ -66,7 +66,6 @@ describe("worker integration", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
     const body = await res.text();
-    expect(body).toContain("sanitizeSvg");
-    expect(body).toContain("SANITIZE_SVG_INLINE_START");
+    expect(body).toContain('<script type="module" src="/admin/app.js">');
   });
 });

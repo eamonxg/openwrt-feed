@@ -7,6 +7,7 @@ import { shortId, canonicalJson, contentHash, sha256Hex } from "./ids.js";
 import { validateMeta, validatePayload, cleanText } from "./validate.js";
 import { MAGIC_CHECKS, r2Key, sniffLoginBgFormat } from "./assets.js";
 import { jsonResponse, errorResponse, readJsonBounded, MAX_BODY_BYTES } from "./http.js";
+import { softTakedown, purgeConfig } from "./lifecycle.js";
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
@@ -693,25 +694,17 @@ async function deleteConfig(request, env, theme, id) {
   const body = await parseJsonBody(request, SMALL_BODY_BYTES);
   await requireOwnedConfig(env.DB, theme, id, body.device_token);
 
-  const { results: assetRows } = await env.DB
-    .prepare("SELECT kind FROM assets WHERE config_id = ?")
-    .bind(id)
-    .all();
-
-  // status='removed' frees this row's (theme, content_hash) slot in
-  // idx_configs_dedup (a partial unique index scoped to status='active'),
-  // so the exact same content can be re-shared afterwards without a
-  // duplicate_content conflict. dl_dedup/reports rows are left alone —
-  // history for an already-removed config is still meaningful.
-  await env.DB.batch([
-    env.DB.prepare("UPDATE configs SET status = 'removed', updated_at = datetime('now') WHERE id = ?").bind(id),
-    env.DB.prepare("DELETE FROM assets WHERE config_id = ?").bind(id),
-  ]);
-
-  for (const a of assetRows) {
-    await env.R2.delete(r2Key("pending", id, a.kind));
-    await env.R2.delete(r2Key("approved", id, a.kind));
-  }
+  // owner 自己删除 = 下架 + 销毁字节。走 purgeConfig 而不是只标 removed,
+  // 是因为作者删掉自己的作品时没有留着字节的理由;而它必须盖上 purged_at,
+  // 否则管理端会看到一条「已下架、资产还在」的配置并提供恢复,恢复出来却是
+  // 一份没有字体和登录背景的空壳。
+  //
+  // status='removed' 释放了这一行在 idx_configs_dedup(建在 status='active'
+  // 上的 partial unique index)里的 (theme, content_hash) 槽位,所以同样的
+  // 内容之后可以重新分享而不撞 duplicate_content。
+  // dl_dedup / reports 行一概不动 —— 已删配置的历史仍然有意义。
+  await softTakedown(env, id);
+  await purgeConfig(env, id);
 
   return jsonResponse({ id, removed: true });
 }

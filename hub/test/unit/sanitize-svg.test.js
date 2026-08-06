@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeSvg } from "../../src/sanitize-svg.js";
+// ?raw hands back the file's bytes as a string. node:fs is unavailable inside
+// the workers pool, so this is how a test in here reads a file at all.
+import serverSanitizerSource from "../../src/sanitize-svg.js?raw";
+import browserSanitizerSource from "../../site/admin/sanitize-svg.js?raw";
+
+// ---------------------------------------------------------------------------
+// The two copies of the sanitizer must not drift.
+//
+// SVGs are sanitized TWICE by design: the console (site/admin/sanitize-svg.js)
+// strips the bytes in the operator's browser and uploads the result, and the
+// Worker (src/sanitize-svg.js) is the authority that everything else is
+// written against. approve stores exactly the bytes the console sent, and it
+// stores them believing they were sanitized by the server's rules.
+//
+// So a hole patched in src/ alone is silently not patched: the console keeps
+// stripping by the old rules, and the bytes that reach R2 — and from there
+// every router that downloads the config — carry whatever the new rule was
+// added to catch, under a status that says "approved". Every vector below is
+// only ever exercised against the src/ copy; this assertion is the entire
+// reason those results say anything about the browser copy too.
+//
+// scripts/sync-sanitize-svg.mjs copies src/ -> site/admin/ (and --check
+// verifies it), but a script only runs when someone remembers to run it.
+// This test runs on every `vitest run`.
+// ---------------------------------------------------------------------------
+
+describe("site/admin/sanitize-svg.js is a byte-identical copy of src/sanitize-svg.js", () => {
+  it("matches byte for byte", () => {
+    // Not toBe(): a diff of two multi-KB sources is unreadable. Report the
+    // fix instead — the actual bytes are one command away.
+    if (browserSanitizerSource !== serverSanitizerSource) {
+      expect.fail(
+        "site/admin/sanitize-svg.js has drifted from src/sanitize-svg.js. " +
+          "The admin console would sanitize by the old rules while approve stores those bytes as if " +
+          "the server's rules had been applied. Run `node scripts/sync-sanitize-svg.mjs` to resync."
+      );
+    }
+  });
+
+  it("read a real, non-empty sanitizer from both paths", () => {
+    // Guards the guard: if either import ever resolved to something empty,
+    // the equality above would pass while checking nothing.
+    expect(serverSanitizerSource).toContain("export function sanitizeSvg");
+    expect(serverSanitizerSource.length).toBeGreaterThan(1000);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

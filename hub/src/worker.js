@@ -21,6 +21,14 @@ import {
   handleReportsList,
   handleResolveReport,
 } from "./admin.js";
+import { handleRestore, handlePurge, handleAdminList, handleAdminDetail, handleEdit } from "./admin-configs.js";
+import {
+  handleDeviceList,
+  handleDeviceDetail,
+  handleUnbanDevice,
+  handleClearNickname,
+} from "./admin-devices.js";
+import { handleStats, handleLogList } from "./admin-audit.js";
 import { jsonResponse, errorResponse, MAX_BODY_BYTES, CORS_HEADERS, withCors } from "./http.js";
 
 const router = createRouter();
@@ -174,14 +182,25 @@ router.add("GET", "/c/:id", (request, env) => {
 // #9-#15 — admin/moderation API. Every handler in admin.js calls
 // requireAdmin(request, env) as its first step, so no separate gate is
 // needed here in the router table.
+router.add("GET", "/api/v1/admin/configs", handleAdminList);
+router.add("GET", "/api/v1/admin/configs/:id", handleAdminDetail);
+router.add("POST", "/api/v1/admin/configs/:id/edit", handleEdit);
 router.add("GET", "/api/v1/admin/pending", handlePendingList);
 router.add("GET", "/api/v1/admin/assets/:id/:kind", handlePendingAsset);
 router.add("POST", "/api/v1/admin/configs/:id/approve", handleApprove);
 router.add("POST", "/api/v1/admin/configs/:id/reject", handleReject);
 router.add("POST", "/api/v1/admin/configs/:id/takedown", handleTakedown);
+router.add("POST", "/api/v1/admin/configs/:id/restore", handleRestore);
+router.add("POST", "/api/v1/admin/configs/:id/purge", handlePurge);
 router.add("POST", "/api/v1/admin/devices/:device_id/ban", handleBanDevice);
+router.add("GET", "/api/v1/admin/devices", handleDeviceList);
+router.add("GET", "/api/v1/admin/devices/:id", handleDeviceDetail);
+router.add("POST", "/api/v1/admin/devices/:id/unban", handleUnbanDevice);
+router.add("POST", "/api/v1/admin/devices/:id/nickname/clear", handleClearNickname);
 router.add("GET", "/api/v1/admin/reports", handleReportsList);
 router.add("POST", "/api/v1/admin/reports/:rid/resolve", handleResolveReport);
+router.add("GET", "/api/v1/admin/stats", handleStats);
+router.add("GET", "/api/v1/admin/log", handleLogList);
 
 export default {
   async fetch(request, env) {

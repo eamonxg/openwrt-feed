@@ -13,13 +13,14 @@ variables (`FEED_HOST`, `HUB_HOST`).
 
 ## `hub/` Worker secrets
 
-Neither is injected by CI — set them once per environment with
+None of these are injected by CI — set them once per environment with
 `npx wrangler secret put <NAME> --config hub/wrangler.jsonc` (render the
 config first with `hub/scripts/render-config.sh`).
 
 | Secret | Without it |
 | --- | --- |
 | `ADMIN_TOKEN` | `/admin` and every `/api/v1/admin/*` route answers 500 `admin_disabled`. Fails closed on purpose: an empty expected value must never compare equal to an empty Bearer token. |
+| `ADMIN_TOKENS` | Optional — without it, `ADMIN_TOKEN` is the only identity and every `admin_actions` row is attributed to `root`. Format is comma-separated `name:token` pairs (e.g. `alice:<hex>,bob:<hex>`); each name becomes the actor recorded in `admin_actions`. A name must match `[A-Za-z0-9_-]{1,32}`, and a malformed entry is skipped (with a `console.warn`) rather than rejecting the whole secret. |
 | `TICKET_SECRET` | Browser-direct asset upload answers 500 `upload_disabled`. The single-request publish endpoint (`POST /api/v1/themes/:theme/configs`) keeps working, so an unset secret degrades rather than breaks. |
 
 Generate `TICKET_SECRET` with `head -c32 /dev/urandom | xxd -p -c64`. Rotating
