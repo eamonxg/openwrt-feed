@@ -1,6 +1,8 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { makeAsset, makePayload, makeToken, PNG_1X1_BASE64 } from "../helpers.js";
+import { ASSET_SIZE_LIMITS } from "../../src/validate.js";
+import { ADMIN_APPROVE_BODY_BYTES } from "../../src/admin.js";
 
 const SHARE_URL = "https://example.com/api/v1/themes/aurora/configs";
 const ADMIN_TOKEN = "test-admin-token"; // matches vitest.config.js's miniflare bindings
@@ -854,5 +856,141 @@ describe("admin reports", () => {
   it("404 not_found when resolving a non-numeric report id", async () => {
     const res = await adminFetch("/api/v1/admin/reports/not-a-number/resolve", { method: "POST" });
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fonts are approved from the bytes already in storage, never round-tripped
+// through the request body. A full-coverage CJK woff2 is several MB, and
+// base64ing two of them alongside the images pushes the approve body past
+// ADMIN_APPROVE_BODY_BYTES -- a config that can be shared but never approved.
+//
+// This whole path had no coverage before: the console was free to change the
+// wire format without a single test noticing.
+// ---------------------------------------------------------------------------
+
+describe("admin approve: fonts come from pending/, not the body", () => {
+  const WOFF2_BYTES = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0x00, 0x01, 0x02, 0x03]);
+  const WOFF2_BASE64 = bytesToBase64(WOFF2_BYTES);
+  const SVG_BASE64 = btoa('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+
+  it("approves a font from its stored bytes and keeps them byte-for-byte", async () => {
+    const { id } = await shareWithAssets({
+      name: "Fonted",
+      assetSpecs: [{ kind: "font_sans", base64: WOFF2_BASE64 }],
+      colorSeed: "#301001",
+    });
+
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "font_sans", passthrough: true }] }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await assetRow(id, "font_sans");
+    expect(row.status).toBe("approved");
+    expect(row.size).toBe(WOFF2_BYTES.byteLength);
+
+    const object = await env.R2.get(`approved/${id}/font_sans`);
+    expect(object).not.toBeNull();
+    const stored = new Uint8Array(await object.arrayBuffer());
+    expect(bytesToBase64(stored)).toBe(WOFF2_BASE64);
+  });
+
+  // The passthrough form must not become a way to post arbitrary bytes under
+  // a name that says nobody looked at them.
+  it("refuses a font that also carries data_b64", async () => {
+    const { id } = await shareWithAssets({
+      name: "Smuggler",
+      assetSpecs: [{ kind: "font_sans", base64: WOFF2_BASE64 }],
+      colorSeed: "#301002",
+    });
+
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        assets: [{ kind: "font_sans", passthrough: true, data_b64: WOFF2_BASE64 }],
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("missing_asset");
+    expect(await assetRow(id, "font_sans")).toMatchObject({ status: "pending" });
+  });
+
+  it("refuses a font sent the old way, as data_b64", async () => {
+    const { id } = await shareWithAssets({
+      name: "OldClient",
+      assetSpecs: [{ kind: "font_sans", base64: WOFF2_BASE64 }],
+      colorSeed: "#301003",
+    });
+
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "font_sans", data_b64: WOFF2_BASE64 }] }),
+    });
+    expect(res.status).toBe(400);
+    expect(await assetRow(id, "font_sans")).toMatchObject({ status: "pending" });
+  });
+
+  // The guard that matters most: if a kind that DOES get rewritten could be
+  // waved through as passthrough, approve would store bytes no sanitizer ever
+  // touched. That is the whole risk this wire format exists to prevent.
+  it("refuses passthrough for a kind the console must sanitize", async () => {
+    const { id } = await shareWithAssets({
+      name: "Unsanitized",
+      assetSpecs: [{ kind: "logo_svg", base64: SVG_BASE64 }],
+      colorSeed: "#301004",
+    });
+
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "logo_svg", passthrough: true }] }),
+    });
+    expect(res.status).toBe(400);
+    // The code matters as much as the status: this must be refused for
+    // claiming passthrough on a sanitized kind, not incidentally because
+    // some downstream check choked on a missing body. Asserting only the
+    // status let a mutation that dropped the server's own opinion of which
+    // kinds are passthrough still pass this test.
+    expect((await res.json()).error.code).toBe("missing_asset");
+    expect(await assetRow(id, "logo_svg")).toMatchObject({ status: "pending" });
+  });
+
+  it("409 when the pending bytes are gone from storage", async () => {
+    const { id } = await shareWithAssets({
+      name: "Vanished",
+      assetSpecs: [{ kind: "font_mono", base64: WOFF2_BASE64 }],
+      colorSeed: "#301005",
+    });
+
+    await env.R2.delete(`pending/${id}/font_mono`);
+
+    const res = await adminFetch(`/api/v1/admin/configs/${id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assets: [{ kind: "font_mono", passthrough: true }] }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("assets_incomplete");
+    expect(await assetRow(id, "font_mono")).toMatchObject({ status: "pending" });
+  });
+
+  // The size arithmetic that made this necessary, asserted rather than
+  // narrated: with fonts in the body, a maxed-out config would not fit.
+  it("a maxed-out config's images fit the approve cap once fonts are out of the body", async () => {
+    const IMAGE_KINDS = ["logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192", "pwa_icon_512", "login_bg"];
+    const base64Size = (bytes) => Math.ceil(bytes / 3) * 4;
+    const imagesOnly = IMAGE_KINDS.reduce((sum, kind) => sum + base64Size(ASSET_SIZE_LIMITS[kind]), 0);
+    const withFonts =
+      imagesOnly +
+      base64Size(ASSET_SIZE_LIMITS.font_sans) +
+      base64Size(ASSET_SIZE_LIMITS.font_mono);
+
+    expect(imagesOnly).toBeLessThan(ADMIN_APPROVE_BODY_BYTES);
+    expect(withFonts).toBeGreaterThan(ADMIN_APPROVE_BODY_BYTES);
   });
 });

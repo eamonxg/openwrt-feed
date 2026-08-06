@@ -776,6 +776,16 @@ function bytesToBase64(bytes) {
 // metadata/polyglot tricks in raster formats — this applies to every
 // browser-decodable raster kind except favicon_ico (see note below).
 const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg"]);
+// Mirrors APPROVE_FROM_R2_KINDS in src/assets.js. These are still fetched and
+// previewed here, but their bytes never go back up: approve reads them from
+// pending/ server-side. A full-coverage CJK woff2 is several MB, and base64ing
+// two of them into the approve body is what used to push it past the cap.
+//
+// The two lists are kept honest by the wire format rather than by discipline:
+// each entry declares which form it is using and approve rejects any
+// disagreement, so a kind that gains a real sanitizer here but stays in this
+// set fails immediately instead of silently approving unsanitized bytes.
+const APPROVE_FROM_R2_KINDS = new Set(["font_sans", "font_mono"]);
 const MAX_IMAGE_DIMENSION = 4096;
 
 async function fetchPendingAsset(configId, kind) {
@@ -1033,10 +1043,11 @@ async function renderQueueCard(item) {
     approveBtn.disabled = true;
     try {
       const body = {
-        assets: pendingAssets.map((a) => ({
-          kind: a.kind,
-          data_b64: bytesToBase64(results[a.kind].bytes),
-        })),
+        assets: pendingAssets.map((a) =>
+          APPROVE_FROM_R2_KINDS.has(a.kind)
+            ? { kind: a.kind, passthrough: true }
+            : { kind: a.kind, data_b64: bytesToBase64(results[a.kind].bytes) },
+        ),
       };
       await apiFetchJson("/api/v1/admin/configs/" + encodeURIComponent(item.config_id) + "/approve", {
         method: "POST",

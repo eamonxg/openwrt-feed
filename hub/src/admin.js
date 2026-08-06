@@ -6,14 +6,24 @@
 import { HttpError, requireAdmin } from "./auth.js";
 import { sha256Hex } from "./ids.js";
 import { jsonResponse, errorResponse, readJsonBounded } from "./http.js";
-import { MAGIC_CHECKS, r2Key, contentTypeFor, sniffLoginBgFormat } from "./assets.js";
+import {
+  MAGIC_CHECKS,
+  r2Key,
+  contentTypeFor,
+  sniffLoginBgFormat,
+  APPROVE_FROM_R2_KINDS,
+} from "./assets.js";
 import { ASSET_SIZE_LIMITS } from "./validate.js";
 
 // Approve bodies carry base64 sanitized assets: all kinds together can
 // exceed the general 12 MB request cap once base64 overhead is counted (an
 // 8 MB font alone is ~10.7 MB base64-encoded), so admin approve gets its own,
-// larger streaming cap.
-const ADMIN_APPROVE_BODY_BYTES = 25 * 1024 * 1024;
+// larger streaming cap. This is also the real ceiling on FONT_ASSET_LIMIT:
+// two max-size fonts plus images must still fit here, so raising the font
+// limit without raising this would mint configs that can be shared but never
+// approved. Lifting it for real means not round-tripping bytes through a JSON
+// body at all (read pending/ from R2, copy to approved/ in place).
+export const ADMIN_APPROVE_BODY_BYTES = 25 * 1024 * 1024;
 
 async function parseJsonBody(request, maxBytes) {
   const body = await readJsonBounded(request, maxBytes);
@@ -171,20 +181,44 @@ async function approveConfig(request, env, id) {
     throw new HttpError(400, "missing_asset", "assets must cover exactly the config's asset kinds.");
   }
 
+  // An entry either carries sanitized bytes (data_b64) or declares that this
+  // kind is passed through untouched, in which case approve reads the bytes
+  // from pending/ itself. The two forms are not interchangeable: a kind in
+  // APPROVE_FROM_R2_KINDS must use the passthrough form and every other kind
+  // must carry bytes. That strictness is the point -- if the console ever
+  // starts rewriting a kind listed here (or stops rewriting one that is not),
+  // approve fails loudly instead of quietly storing bytes nobody sanitized.
   const byKind = new Map();
   for (const entry of body.assets) {
     if (
       typeof entry !== "object" ||
       entry === null ||
-      typeof entry.kind !== "string" ||
-      typeof entry.data_b64 !== "string"
+      typeof entry.kind !== "string"
     ) {
       throw new HttpError(400, "missing_asset", "Malformed asset entry.");
     }
     if (byKind.has(entry.kind)) {
       throw new HttpError(400, "missing_asset", "Duplicate asset kind in request body.");
     }
-    byKind.set(entry.kind, entry.data_b64);
+
+    const fromR2 = APPROVE_FROM_R2_KINDS.has(entry.kind);
+    if (fromR2) {
+      if (entry.passthrough !== true || entry.data_b64 !== undefined) {
+        throw new HttpError(
+          400,
+          "missing_asset",
+          `Asset ${entry.kind} is approved from stored bytes; send { passthrough: true } and no data_b64.`
+        );
+      }
+    } else if (typeof entry.data_b64 !== "string" || entry.passthrough !== undefined) {
+      throw new HttpError(
+        400,
+        "missing_asset",
+        `Asset ${entry.kind} must carry sanitized data_b64.`
+      );
+    }
+
+    byKind.set(entry.kind, fromR2 ? null : entry.data_b64);
   }
 
   // The body must cover EXACTLY the config's PENDING asset kinds — no fewer
@@ -202,7 +236,24 @@ async function approveConfig(request, env, id) {
 
   const resolved = [];
   for (const kind of expectedKinds) {
-    const bytes = base64ToBytes(byKind.get(kind));
+    let bytes;
+    if (APPROVE_FROM_R2_KINDS.has(kind)) {
+      // These bytes were checked once on the way in (drafts.js), but they
+      // have been sitting in storage since; re-running the same gates costs
+      // nothing here and means both approve paths carry identical guarantees
+      // rather than one of them trusting the bucket.
+      const object = await env.R2.get(r2Key("pending", id, kind));
+      if (!object) {
+        throw new HttpError(
+          409,
+          "assets_incomplete",
+          `Asset ${kind} has no pending bytes to approve.`
+        );
+      }
+      bytes = new Uint8Array(await object.arrayBuffer());
+    } else {
+      bytes = base64ToBytes(byKind.get(kind));
+    }
 
     const check = MAGIC_CHECKS[kind];
     if (!check || !check(bytes)) {

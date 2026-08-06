@@ -62,6 +62,24 @@ export function sniffLoginBgFormat(bytes) {
   return null;
 }
 
+// Kinds whose approved bytes are byte-for-byte the pending bytes, so the
+// admin console has no reason to download them, base64 them, and post them
+// straight back: approve reads these from pending/ in the Worker instead.
+//
+// This is what keeps the approve body inside ADMIN_APPROVE_BODY_BYTES. With
+// fonts in the body, one config's assets can reach 6*2 MiB + 2*8 MiB = 28 MiB,
+// ~37 MB base64 — over the 25 MB cap, i.e. a config that can be shared but
+// never approved.
+//
+// favicon_ico is deliberately NOT here even though it is also passed through
+// today: at 2 MiB it is no part of the size problem, and its passthrough is
+// forced (canvas cannot emit ICO) rather than intended, so it is the kind
+// most likely to grow a real sanitizer later. Anything added here must be
+// bytes the console genuinely never rewrites -- the console declares its own
+// view per asset and approve rejects any disagreement, so this list and the
+// console's cannot drift apart in silence.
+export const APPROVE_FROM_R2_KINDS = new Set(["font_sans", "font_mono"]);
+
 export const MAGIC_CHECKS = {
   logo_svg: isSvg,
   favicon_png: isPng,
