@@ -167,12 +167,14 @@ const STATIC_CONTENT_TYPES = {
 // from the format recorded in R2 customMetadata at write time — pass that
 // string in as `format`. Every other kind pins its own and ignores it.
 //
-// The fallbacks are the format the review console produces: it re-encodes
-// login_bg to PNG unconditionally, and leaves a toolbar icon in whichever of
-// the two formats it arrived as (an SVG through sanitizeSvg, a PNG through the
-// canvas). Missing metadata therefore reads as PNG, never as SVG — guessing
-// "svg" for a raster byte stream would hand a browser a mislabelled image,
-// while the reverse merely renders nothing.
+// The fallbacks cover objects whose customMetadata went missing: the review
+// console re-encodes the bg kinds to JPEG (stepping quality until they fit
+// the 2 MiB cap) and leaves a toolbar icon in whichever of its two formats it
+// arrived as (an SVG through sanitizeSvg, a PNG through the canvas). A
+// missing-metadata bg object still reads as PNG — legacy objects predate the
+// JPEG re-encode — and a toolbar icon reads as PNG, never SVG: guessing "svg"
+// for a raster byte stream would hand a browser a mislabelled image, while
+// the reverse merely renders nothing.
 export function contentTypeFor(kind, format) {
   if (isBgKind(kind)) {
     return format === "jpeg" ? "image/jpeg" : "image/png";

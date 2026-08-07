@@ -272,7 +272,7 @@ async function approveConfig(request, env, id) {
     const sha256 = await sha256Hex(bytes);
     // Sniffed from the bytes the console actually returned, never assumed
     // from what it was asked to do: it re-encodes the bg kinds (login_bg /
-    // main_bg) to png, and leaves a toolbar icon in whichever of SVG/PNG it
+    // main_bg) to jpeg, and leaves a toolbar icon in whichever of SVG/PNG it
     // arrived as. MAGIC_CHECKS ran above, so this cannot come back null.
     const format = sniffFormat(kind, bytes);
     resolved.push({ kind, bytes, size: bytes.byteLength, sha256, format });

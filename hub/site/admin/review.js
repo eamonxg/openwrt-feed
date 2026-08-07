@@ -23,6 +23,14 @@ export function bytesToBase64(bytes) {
 // browser-decodable raster kind except favicon_ico (see note below).
 const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg", "main_bg"]);
 const MAX_IMAGE_DIMENSION = 4096;
+// Full-page backgrounds legitimately arrive as 5K/6K wallpapers; the store's
+// 2 MiB byte cap already bounds decode cost, so they get a wider pixel budget
+// than icons instead of being shareable-but-never-approvable.
+const MAX_BG_DIMENSION = 8192;
+const isBgKind = (kind) => kind === "login_bg" || kind === "main_bg";
+// Mirrors validate.js's OTHER_ASSET_LIMIT: approve rejects re-encoded bytes
+// past this, so the re-encoder below must aim under it, not just decode.
+const BG_APPROVE_LIMIT = 2 * 1024 * 1024;
 
 // A toolbar shortcut icon is SVG or PNG depending on what its author uploaded,
 // so its sanitizer is picked from the bytes rather than from the kind: running
@@ -141,23 +149,49 @@ export async function sanitizeAsset(configId, kind) {
     } catch (err) {
       return { ok: false, message: "Not a decodable image." };
     }
-    if (bitmap.width > MAX_IMAGE_DIMENSION || bitmap.height > MAX_IMAGE_DIMENSION) {
+    // Read the dimensions BEFORE close(): a closed ImageBitmap reports 0x0,
+    // which used to turn every oversized wallpaper into a baffling "(0x0)".
+    const bmWidth = bitmap.width;
+    const bmHeight = bitmap.height;
+    const cap = isBgKind(kind) ? MAX_BG_DIMENSION : MAX_IMAGE_DIMENSION;
+    if (bmWidth > cap || bmHeight > cap) {
       bitmap.close();
       return {
         ok: false,
-        message: "Image exceeds the " + MAX_IMAGE_DIMENSION + "x" + MAX_IMAGE_DIMENSION + " cap (" +
-          bitmap.width + "x" + bitmap.height + ").",
+        message: "Image exceeds the " + cap + "x" + cap + " cap (" +
+          bmWidth + "x" + bmHeight + ").",
       };
     }
     try {
       const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
+      canvas.width = bmWidth;
+      canvas.height = bmHeight;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
-      // the bg kinds (login_bg / main_bg) accept jpeg input at share time
-      // but are always re-encoded to png here, per the functional contract.
+      // The bg kinds re-encode to JPEG, stepping the quality down until the
+      // bytes fit the store's 2 MiB asset cap: a canvas PNG of a photo
+      // balloons well past it, which quietly resurrected the
+      // shareable-but-never-approvable failure right here at approve time.
+      // Backgrounds are full-bleed photos, so JPEG's lack of alpha is free.
+      if (isBgKind(kind)) {
+        for (const quality of [0.92, 0.85, 0.75, 0.65]) {
+          const jpegBlob = await new Promise((resolve) =>
+            canvas.toBlob(resolve, "image/jpeg", quality)
+          );
+          if (!jpegBlob) throw new Error("canvas.toBlob returned null.");
+          if (jpegBlob.size <= BG_APPROVE_LIMIT) {
+            const outBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+            return { ok: true, bytes: outBytes, blob: jpegBlob, previewKind: "image" };
+          }
+        }
+        return {
+          ok: false,
+          message: "Re-encoded image cannot fit the 2 MiB store cap.",
+        };
+      }
+      // Every other raster kind still lands as PNG, per the functional
+      // contract (icons want lossless + alpha).
       const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!pngBlob) throw new Error("canvas.toBlob returned null.");
       const outBytes = new Uint8Array(await pngBlob.arrayBuffer());
