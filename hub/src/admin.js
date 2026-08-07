@@ -390,7 +390,7 @@ async function takedownConfig(request, env, id, note = "") {
 
   // 只是下架,不销毁字节 —— 永久删除是 admin-configs.js 里独立的一个动作,
   // 且只对已下架的配置开放。
-  await softTakedown(env, id);
+  await softTakedown(env, id, "admin");
   await logAction(env, actor, "takedown", "config", id, note);
 
   return jsonResponse({ id, removed: true });
@@ -416,8 +416,11 @@ async function banDevice(request, env, deviceId) {
     .all();
 
   for (const row of activeConfigs) {
+    // 'admin',和单条下架同一个答案:级联是封禁带下来的,不是作者自己删的。
+    // 标成 'owner' 会让这些配置从作者的「我的分享」里悄悄消失 —— 一个被封的
+    // 人至少该看见自己的作品被下架了。
     // eslint-disable-next-line no-await-in-loop
-    await softTakedown(env, row.id);
+    await softTakedown(env, row.id, "admin");
     // 每条被级联下架的配置各留一条自己的记录,并写明是谁的封禁带下来的。
     // 只在 device 上记一条总数的话,日后翻某一条配置的历史会看到它凭空
     // 消失、没有任何解释。

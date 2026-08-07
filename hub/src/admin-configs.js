@@ -5,7 +5,7 @@ import { HttpError, requireAdmin } from "./auth.js";
 import { logAction } from "./admin-audit.js";
 import { jsonResponse, errorResponse, readJsonBounded, readOptionalReason } from "./http.js";
 import { purgeConfig } from "./lifecycle.js";
-import { extractPalette } from "./configs.js";
+import { extractColors } from "./configs.js";
 import { validateMeta } from "./validate.js";
 
 function toErrorResponse(err) {
@@ -115,7 +115,7 @@ async function listAllConfigs(request, env) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     asset_kinds: row.approved_kinds ? row.approved_kinds.split(",").sort() : [],
-    colors: extractPalette(JSON.parse(row.payload)),
+    colors: extractColors(JSON.parse(row.payload)),
     open_reports: row.open_reports,
   }));
 
@@ -153,8 +153,13 @@ async function restoreConfig(request, env, id) {
   }
 
   try {
+    // removed_by 跟着回到 NULL:它描述的是「这一次下架是谁干的」,配置一旦
+    // 重新上架,那次下架就结束了。留着它,下一次 owner 自己删除之前,这一行
+    // 会一直带着 'admin' 的旧答案。
     await env.DB
-      .prepare("UPDATE configs SET status = 'active', updated_at = datetime('now') WHERE id = ?")
+      .prepare(
+        "UPDATE configs SET status = 'active', removed_by = NULL, updated_at = datetime('now') WHERE id = ?"
+      )
       .bind(id)
       .run();
   } catch (err) {

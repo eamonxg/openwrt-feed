@@ -136,7 +136,7 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     expect(await removedDetail.json()).toEqual({ error: { code: "not_found", message: expect.any(String) } });
   });
 
-  it("returns a palette summary of 8 colors extracted from the stored payload", async () => {
+  it("carries the 8 summary colors under the payload's own key names, and no second shape", async () => {
     const id = await share({
       name: "Palette",
       colors: {
@@ -154,10 +154,20 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
     const res = await SELF.fetch(`${LIST_URL}?sort=hot`);
     const body = await res.json();
     const item = body.items.find((i) => i.id === id);
-    expect(item.palette).toEqual({
-      light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
-      dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },
+    expect(item.preview.colors).toEqual({
+      light_bg: "#111111",
+      light_surface: "#222222",
+      light_text: "#333333",
+      light_brand: "#444444",
+      dark_bg: "#555555",
+      dark_surface: "#666666",
+      dark_text: "#777777",
+      dark_brand: "#888888",
     });
+    // The nested `palette` shape is gone for good. Two shapes for one set of
+    // colors is what let a card and the hub's own site describe the same
+    // config differently depending on which one they read.
+    expect(item.palette).toBeUndefined();
   });
 
   it("returns a preview projection that reuses the payload's own key names", async () => {
@@ -223,12 +233,6 @@ describe("GET /api/v1/themes/:theme/configs (list)", () => {
 
     // A config with no approved assets carries an empty list, never undefined.
     expect(item.preview.assets).toEqual([]);
-
-    // palette is deprecated but still present: 1.1.3 devices read it.
-    expect(item.palette).toEqual({
-      light: { bg: "#111111", surface: "#222222", text: "#333333", brand: "#444444" },
-      dark: { bg: "#555555", surface: "#666666", text: "#777777", brand: "#888888" },
-    });
   });
 
   it("preview.assets lists approved kinds only, with the same relative url the detail endpoint uses", async () => {

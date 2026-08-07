@@ -56,7 +56,7 @@ export function renderConfigList(container, items, handlers) {
     const swatch = el("div", { class: "swatch" });
     // 缩略色块取 payload 里的浅色主色,列表因此一眼能分辨风格,而不必为
     // 每一行去取一张图。
-    swatch.style.background = item.colors?.light?.bg ?? "transparent";
+    swatch.style.background = item.colors?.light_bg ?? "transparent";
 
     const nameCell = el("td", null, [
       el("div", { class: item.purged ? "name-purged" : "", text: item.name }),

@@ -314,16 +314,20 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 // concatenated into innerHTML.
 // -----------------------------------------------------------------------------
 
+// Keyed against `preview.colors`, which is flat and prefixed (light_bg,
+// dark_brand, …) — the payload's own key names. The API used to also carry a
+// nested `palette` in a shape of its own; that is gone, and with it the risk
+// of this page and a LuCI card disagreeing about the same config's colors.
 const PALETTE_KEYS = ["bg", "surface", "text", "brand"];
 const cardTemplate = document.getElementById("card-template");
 const cardsEl = document.getElementById("cards");
 
-function buildSwatches(container, colorSet) {
+function buildSwatches(container, colors, mode) {
   container.textContent = "";
   for (const key of PALETTE_KEYS) {
     const swatch = document.createElement("span");
     swatch.className = "swatch";
-    const value = colorSet ? colorSet[key] : undefined;
+    const value = colors ? colors[mode + "_" + key] : undefined;
     if (typeof value === "string") {
       // Property assignment only — the CSSOM either accepts this as a valid
       // color or silently ignores it; it can never be interpreted as markup.
@@ -346,9 +350,9 @@ function buildCard(item) {
   const downloads = Number.isFinite(item.downloads) ? item.downloads : 0;
   frag.querySelector(".card-downloads").textContent = String(downloads) + t("downloads_suffix");
 
-  const palette = item.palette || {};
-  buildSwatches(frag.querySelector('[data-row="light"]'), palette.light);
-  buildSwatches(frag.querySelector('[data-row="dark"]'), palette.dark);
+  const colors = (item.preview && item.preview.colors) || {};
+  buildSwatches(frag.querySelector('[data-row="light"]'), colors, "light");
+  buildSwatches(frag.querySelector('[data-row="dark"]'), colors, "dark");
 
   return card;
 }

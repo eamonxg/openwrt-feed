@@ -53,7 +53,11 @@ describe("POST /api/v1/me", () => {
     expect(body.nickname).toBe(null);
     expect(body.configs.map((c) => c.name)).toEqual(["Second", "First"]);
     expect(body.configs[0].id).toBe(second);
-    expect(body.configs[0].palette.light.bg).toBe("#222222");
+    // Same projection the browse list carries, under the payload's own key
+    // names -- the author's copy of a card cannot describe a config
+    // differently from everyone else's.
+    expect(body.configs[0].preview.colors.light_bg).toBe("#222222");
+    expect(body.configs[0].palette).toBeUndefined();
   });
 
   it("does not leak another device's configs", async () => {
@@ -126,7 +130,7 @@ describe("POST /api/v1/me", () => {
     expect((await res.json()).error).toBe("invalid_nickname");
   });
 
-  it("still lists a config the author removed, marked removed", async () => {
+  it("drops a config the author deleted themselves", async () => {
     const token = makeToken();
     const id = await share(token, "Gone", "#555555");
 
@@ -137,8 +141,48 @@ describe("POST /api/v1/me", () => {
     });
     expect(del.status).toBe(200);
 
+    // Deleting used to leave the row here, marked 'removed'. The client had
+    // to hide it -- and hid genuine takedowns along with it. Gone means gone.
+    const body = await (await postMe({ device_token: token })).json();
+    expect(body.configs).toEqual([]);
+  });
+
+  it("keeps a config an admin took down, so the author is told", async () => {
+    const token = makeToken();
+    const id = await share(token, "Taken down", "#557755");
+
+    const res = await SELF.fetch(`https://example.com/api/v1/admin/configs/${id}/takedown`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-admin-token" },
+    });
+    expect(res.status).toBe(200);
+
     const body = await (await postMe({ device_token: token })).json();
     expect(body.configs).toHaveLength(1);
+    expect(body.configs[0].id).toBe(id);
+    // This is the only surface that will ever tell the author. The public
+    // browse endpoints hide it by design.
     expect(body.configs[0].status).toBe("removed");
+  });
+
+  it("separates a takedown from the author's own deletion", async () => {
+    const token = makeToken();
+    const mine = await share(token, "I deleted this", "#661111");
+    const theirs = await share(token, "They took this down", "#662222");
+
+    await SELF.fetch(`${CONFIGS_URL}/${mine}`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_token: token }),
+    });
+    await SELF.fetch(`https://example.com/api/v1/admin/configs/${theirs}/takedown`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-admin-token" },
+    });
+
+    // Both rows carry status='removed' in the table. Only removed_by tells
+    // them apart, which is the entire reason that column exists.
+    const body = await (await postMe({ device_token: token })).json();
+    expect(body.configs.map((c) => c.id)).toEqual([theirs]);
   });
 });

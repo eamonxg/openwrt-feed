@@ -9,14 +9,26 @@
 // the caller, not an outcome a user can act on.
 
 import { HttpError, deviceFromToken } from "./auth.js";
-import { extractPalette } from "./configs.js";
+import { extractPreview, previewAssets } from "./configs.js";
 import { validateNickname } from "./validate.js";
 import { jsonResponse, errorResponse, readJsonBounded } from "./http.js";
 
 const SMALL_BODY_BYTES = 4096;
 
-// No status filter: an author must be able to see that their own config was
-// taken down, which the public browse endpoints deliberately hide.
+// Two kinds of row reach the author, and exactly two: what is live, and what
+// an admin took down. What the author deleted themselves is NOT here.
+//
+// This used to be an unfiltered `WHERE device_id = ?`, defended as "an author
+// must be able to see that their own config was taken down". The intent was
+// right, the query was not: it also returned the rows the author had just
+// deleted, and there was no column that told the two apart -- so the client
+// had no choice but to hide every removed row, which threw the takedowns out
+// with them. removed_by (migration 0007) is what makes the intended filter
+// expressible at all.
+//
+// A takedown the admin later purged stays visible too: the bytes are gone,
+// but "your config was taken down" is still the truthful answer, and it is
+// the only place the author will ever be told.
 async function listOwnConfigs(db, deviceId) {
   const { results } = await db
     .prepare(
@@ -25,10 +37,20 @@ async function listOwnConfigs(db, deviceId) {
       // indistinguishable by timestamp, and configs.id is a random shortId --
       // ordering by it would scramble "newest first" at random. rowid is
       // monotonic in insertion order, which is exactly the intent.
-      `SELECT id, name, downloads, assets_status, status, created_at, payload
-         FROM configs
-        WHERE device_id = ?
-        ORDER BY created_at DESC, rowid DESC`
+      //
+      // The assets LEFT JOIN mirrors the browse list's: `preview.assets` must
+      // mean the same thing on both endpoints -- approved bytes only, never
+      // what is still pending or already rejected -- or the author's own copy
+      // of a card would promise artwork the store does not serve.
+      `SELECT c.id, c.name, c.downloads, c.assets_status, c.status,
+              c.created_at, c.payload,
+              GROUP_CONCAT(a.kind) AS approved_kinds
+         FROM configs c
+         LEFT JOIN assets a ON a.config_id = c.id AND a.status = 'approved'
+        WHERE c.device_id = ?
+          AND (c.status = 'active' OR c.removed_by = 'admin')
+        GROUP BY c.id
+        ORDER BY c.created_at DESC, c.rowid DESC`
     )
     .bind(deviceId)
     .all();
@@ -38,9 +60,12 @@ async function listOwnConfigs(db, deviceId) {
     name: row.name,
     downloads: row.downloads,
     assets_status: row.assets_status,
+    // 'active' or 'removed'. After the filter above, 'removed' can only mean
+    // an admin takedown -- the client renders it as such without needing to
+    // know why.
     status: row.status,
     created_at: row.created_at,
-    palette: extractPalette(JSON.parse(row.payload)),
+    preview: extractPreview(JSON.parse(row.payload), previewAssets(row.id, row.approved_kinds)),
   }));
 }
 

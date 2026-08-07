@@ -161,24 +161,12 @@ function parsePage(url) {
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
-// DEPRECATED — kept for luci-app-aurora-config <= 1.1.3, which is live on
-// real devices and reads `item.palette`. Removing it would break those
-// installs outright. New clients read `item.preview.colors` instead (see
-// extractPreview below); this must not be deleted until that fleet is gone.
-//
-// The 8-color list summary: light/dark each {bg, surface, text, brand},
-// pulled straight out of the stored (already-validated) payload's `colors`
-// section — never re-validated here.
-export function extractPalette(payload) {
-  const colors = payload.colors;
-  const pick = (prefix) => ({
-    bg: colors[`${prefix}_bg`],
-    surface: colors[`${prefix}_surface`],
-    text: colors[`${prefix}_text`],
-    brand: colors[`${prefix}_brand`],
-  });
-  return { light: pick("light"), dark: pick("dark") };
-}
+// `palette` — the old 8-color summary in its own {light:{bg,…}, dark:{…}}
+// shape — used to live here alongside `preview`. It is gone: every consumer
+// now reads `preview.colors`, which carries the same 8 values under the
+// payload's own key names. Two shapes for one set of colors was the whole
+// problem — a card and the site could describe the same config differently
+// depending on which one they happened to read.
 
 // The list row's `preview` is a STRUCTURAL SUBSET of the stored payload:
 // every retained field keeps payload's own name and type, there are just
@@ -204,13 +192,24 @@ const PREVIEW_COLOR_KEYS = [
   "dark_bg", "dark_surface", "dark_text", "dark_brand",
 ];
 
+// The 8 summary colors, flat, under the payload's own key names. Every
+// surface that shows a config's colors without showing the whole config —
+// browse cards, the author's own list, the admin console — reads this one
+// projection. There is deliberately no second shape: while there were two,
+// the same config could be drawn differently depending on which endpoint the
+// caller happened to hit.
+export function extractColors(payload) {
+  const colors = {};
+  for (const key of PREVIEW_COLOR_KEYS) colors[key] = payload.colors[key];
+  return colors;
+}
+
 // `assets` is NOT derived from `payload.assets`: that manifest lists what the
 // author uploaded, including bytes still awaiting review or already
 // rejected. Showing those as "included" would leak unreviewed content into
 // the browse surface. The caller passes the approved-only rows instead.
-function extractPreview(payload, assets) {
-  const colors = {};
-  for (const key of PREVIEW_COLOR_KEYS) colors[key] = payload.colors[key];
+export function extractPreview(payload, assets) {
+  const colors = extractColors(payload);
 
   const toolbar = payload.toolbar.map((item) => {
     const entry = { title: item.title, enabled: item.enabled };
@@ -236,7 +235,7 @@ function extractPreview(payload, assets) {
 // The url stays RELATIVE, exactly like the detail endpoint's — the client
 // owns the hub base and prepends it. Returning an absolute url here would
 // bake this deployment's hostname into cached client data.
-function previewAssets(id, approvedKinds) {
+export function previewAssets(id, approvedKinds) {
   return (approvedKinds ?? "")
     .split(",")
     .filter(Boolean)
@@ -320,7 +319,6 @@ async function listConfigs(request, env, theme) {
       // Lets a client skip a row whose schema it cannot read, instead of
       // rendering it wrong.
       schema: row.schema,
-      palette: extractPalette(payload),
       preview: extractPreview(payload, previewAssets(row.id, row.approved_kinds)),
     };
   });
@@ -703,7 +701,7 @@ async function deleteConfig(request, env, theme, id) {
   // 上的 partial unique index)里的 (theme, content_hash) 槽位,所以同样的
   // 内容之后可以重新分享而不撞 duplicate_content。
   // dl_dedup / reports 行一概不动 —— 已删配置的历史仍然有意义。
-  await softTakedown(env, id);
+  await softTakedown(env, id, "owner");
   await purgeConfig(env, id);
 
   return jsonResponse({ id, removed: true });

@@ -132,7 +132,7 @@ describe("GET /admin/configs", () => {
     const found = (await adminList("?q=WithAsset")).items[0];
     expect(found.asset_kinds).toEqual(["login_bg"]);
     expect(found.purged).toBe(false);
-    expect(found.colors.light.bg).toBe("#10000c");
+    expect(found.colors.light_bg).toBe("#10000c");
   });
 
   it("falls back to page 1 on a nonsense page number", async () => {
