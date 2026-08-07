@@ -40,19 +40,38 @@ describe("exported constants", () => {
     ]);
   });
 
-  it("ASSET_KINDS has exactly 8 kinds", () => {
-    expect(ASSET_KINDS).toHaveLength(8);
+  it("ASSET_KINDS has exactly 20 kinds", () => {
+    expect(ASSET_KINDS).toHaveLength(20);
     expect(ASSET_KINDS).toEqual([
       "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192",
       "pwa_icon_512", "login_bg", "font_sans", "font_mono",
+      // 每个不同的自定义快捷方式图标一个槽位，按首次出现编号。12 = 快捷方式
+      // 本身的上限，所以没有配置能凑出第 13 个不同的图标。
+      "toolbar_icon_0", "toolbar_icon_1", "toolbar_icon_2", "toolbar_icon_3",
+      "toolbar_icon_4", "toolbar_icon_5", "toolbar_icon_6", "toolbar_icon_7",
+      "toolbar_icon_8", "toolbar_icon_9", "toolbar_icon_10", "toolbar_icon_11",
     ]);
   });
 
-  it("ASSET_SIZE_LIMITS maps fonts to 8 MiB and others to 2 MiB", () => {
+  it("ASSET_SIZE_LIMITS: fonts 8 MiB, toolbar icons 256 KiB, the rest 2 MiB", () => {
     for (const kind of ASSET_KINDS) {
-      const expected = kind === "font_sans" || kind === "font_mono" ? 8388608 : 2097152;
+      let expected = 2097152;
+      if (kind === "font_sans" || kind === "font_mono") expected = 8388608;
+      else if (kind.startsWith("toolbar_icon_")) expected = 262144;
       expect(ASSET_SIZE_LIMITS[kind]).toBe(expected);
     }
+  });
+
+  // 一份资产拉满的配置必须仍然批得下来。approve 把每个非 passthrough 的 kind
+  // 的字节装进一个 JSON body，上限 ADMIN_APPROVE_BODY_BYTES（25 MB）；字体走
+  // passthrough 所以不进 body。这一条守的就是「能分享但永远批不了」不再出现。
+  it("a fully-loaded config still fits the approve body", () => {
+    const inBody = ASSET_KINDS.filter(
+      (kind) => kind !== "font_sans" && kind !== "font_mono"
+    );
+    const raw = inBody.reduce((sum, kind) => sum + ASSET_SIZE_LIMITS[kind], 0);
+    // base64 是 4/3，再给 JSON 结构留点余量
+    expect(Math.ceil(raw * 1.34)).toBeLessThan(25 * 1024 * 1024);
   });
 });
 

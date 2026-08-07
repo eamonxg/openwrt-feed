@@ -126,6 +126,8 @@
   }
   .asset-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .asset-tile .kind { display: block; color: var(--text-muted); word-break: break-word; }
+  .asset-tile .size { display: block; color: var(--text-muted); opacity: 0.75; font-size: 0.9em; }
+  .assets-total { color: var(--text-muted); font-size: 0.9rem; margin: -0.5rem 0 0.75rem; }
 
   ol.howto { padding-left: 1.2rem; margin: 0; }
   ol.howto li { margin-bottom: 0.6rem; }
@@ -208,6 +210,7 @@
 
     <section class="block" id="assets-section" hidden>
       <h2 data-i18n="section_assets">Assets</h2>
+      <p id="assets-total" class="assets-total"></p>
       <div class="asset-grid" id="asset-grid"></div>
     </section>
 
@@ -259,6 +262,8 @@ const STRINGS = {
     author_unknown: "Unknown author",
     downloads_suffix: " downloads",
     font_named: "Font: ",
+    assets_total: "%s in total",
+    asset_toolbar_icon: "Toolbar icon",
   },
   zh: {
     back_to_gallery: "← 返回主题广场",
@@ -283,6 +288,8 @@ const STRINGS = {
     author_unknown: "作者未知",
     downloads_suffix: " 次下载",
     font_named: "字体:",
+    assets_total: "共 %s",
+    asset_toolbar_icon: "工具栏图标",
   },
 };
 
@@ -373,9 +380,32 @@ const LAYOUT_FIELDS = [
 ];
 const TYPOGRAPHY_FIELDS = ["font_sans", "font_mono", "struct_font_sans", "struct_font_mono"];
 
+// The kinds this page can draw a thumbnail for. NOT a whitelist -- an asset
+// whose kind is absent still gets a tile, just named rather than previewed
+// (that is how font_sans/font_mono have always rendered here).
 const IMAGE_ASSET_KINDS = new Set([
   "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192", "pwa_icon_512", "login_bg",
+  "toolbar_icon_0", "toolbar_icon_1", "toolbar_icon_2", "toolbar_icon_3",
+  "toolbar_icon_4", "toolbar_icon_5", "toolbar_icon_6", "toolbar_icon_7",
+  "toolbar_icon_8", "toolbar_icon_9", "toolbar_icon_10", "toolbar_icon_11",
 ]);
+
+// A toolbar icon's kind carries a slot number that means nothing to a reader
+// ("toolbar_icon_3" is not a place, it is an internal index), so the tile is
+// labelled by what it is instead.
+const assetLabel = (kind) =>
+  /^toolbar_icon_/.test(kind) ? t("asset_toolbar_icon") : kind;
+
+// The detail endpoint has always returned `size` per asset and this page has
+// always dropped it on the floor -- yet it is the one number that decides
+// whether a theme is worth putting on a router with 8 MB of flash.
+const formatSize = (bytes) => {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return n >= 1048576
+    ? (n / 1048576).toFixed(1) + " MB"
+    : Math.max(1, Math.round(n / 1024)) + " KB";
+};
 
 // -----------------------------------------------------------------------------
 // Rendering — every user-derived string goes through textContent/
@@ -452,6 +482,8 @@ function renderAssets(assets) {
   }
   section.hidden = false;
 
+  let total = 0;
+
   for (const asset of assets) {
     const tile = el("div", { className: "asset-tile" });
     const preview = el("div", { className: "preview" });
@@ -460,7 +492,7 @@ function renderAssets(assets) {
     if (IMAGE_ASSET_KINDS.has(asset.kind) && typeof asset.url === "string") {
       const img = document.createElement("img");
       img.src = asset.url;
-      img.alt = asset.kind;
+      img.alt = assetLabel(asset.kind);
       preview.appendChild(img);
     } else {
       // font_sans / font_mono: named only, no in-page preview, per the
@@ -468,9 +500,21 @@ function renderAssets(assets) {
       preview.appendChild(el("span", { text: t("font_named") + asset.kind }));
     }
 
-    tile.appendChild(el("span", { className: "kind", text: asset.kind }));
+    tile.appendChild(el("span", { className: "kind", text: assetLabel(asset.kind) }));
+
+    const size = formatSize(asset.size);
+    if (size) {
+      total += Number(asset.size);
+      tile.appendChild(el("span", { className: "size", text: size }));
+    }
     grid.appendChild(tile);
   }
+
+  // 逐个体积回答"这一张有多大",总计回答"应用这套主题要下多少" —— 后者才是
+  // flash 只剩一两 MB 的设备上真正要做的那个决定。
+  const totalEl = document.getElementById("assets-total");
+  const totalText = formatSize(total);
+  totalEl.textContent = totalText ? t("assets_total").replace("%s", totalText) : "";
 }
 
 function renderHowto(name) {

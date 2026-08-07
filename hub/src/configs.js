@@ -5,7 +5,7 @@
 import { HttpError, deviceFromToken, bumpQuota } from "./auth.js";
 import { shortId, canonicalJson, contentHash, sha256Hex } from "./ids.js";
 import { validateMeta, validatePayload, cleanText } from "./validate.js";
-import { MAGIC_CHECKS, r2Key, sniffLoginBgFormat } from "./assets.js";
+import { MAGIC_CHECKS, r2Key, isFormatTrackedKind, sniffFormat } from "./assets.js";
 import { jsonResponse, errorResponse, readJsonBounded, MAX_BODY_BYTES } from "./http.js";
 import { softTakedown, purgeConfig } from "./lifecycle.js";
 
@@ -95,7 +95,7 @@ async function reconcileAssets(manifest, bodyAssets) {
       throw new HttpError(400, "bad_asset", `Asset ${item.kind} failed the magic-byte check.`);
     }
 
-    const format = item.kind === "login_bg" ? sniffLoginBgFormat(bytes) : undefined;
+    const format = sniffFormat(item.kind, bytes);
     resolved.push({ kind: item.kind, bytes, format });
   }
 
@@ -116,7 +116,7 @@ export function bytesSource(kind, bytes, format) {
     format,
     writeTo(env, key) {
       const options = {};
-      if (kind === "login_bg") options.customMetadata = { format };
+      if (isFormatTrackedKind(kind)) options.customMetadata = { format };
       return env.R2.put(key, bytes, options);
     },
   };

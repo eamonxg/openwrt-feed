@@ -1,4 +1,5 @@
 import { HttpError } from "./auth.js";
+import { TOOLBAR_ICON_KINDS, isToolbarIconKind } from "./assets.js";
 
 // ---------------------------------------------------------------------------
 // Contract constants (schema v1, theme "aurora")
@@ -17,16 +18,27 @@ export const COLOR_TOKENS = [
 export const ASSET_KINDS = [
   "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192",
   "pwa_icon_512", "login_bg", "font_sans", "font_mono",
+  ...TOOLBAR_ICON_KINDS,
 ];
 
 const FONT_ASSET_LIMIT = 8388608; // 8 MiB
 const OTHER_ASSET_LIMIT = 2097152; // 2 MiB
+// A toolbar icon renders at 20px. It gets its own, much smaller limit because
+// twelve of them at the image limit would be 24 MiB on their own — approve
+// carries every non-passthrough kind's bytes in one JSON body capped at
+// ADMIN_APPROVE_BODY_BYTES (25 MB), so that is the "shareable but never
+// approvable" failure the font work already had to dig out once.
+// Worst case now: 6*2 MiB + 12*256 KiB = 15 MiB, ~20 MB base64.
+const TOOLBAR_ICON_ASSET_LIMIT = 262144; // 256 KiB
+
+function assetSizeLimit(kind) {
+  if (kind === "font_sans" || kind === "font_mono") return FONT_ASSET_LIMIT;
+  if (isToolbarIconKind(kind)) return TOOLBAR_ICON_ASSET_LIMIT;
+  return OTHER_ASSET_LIMIT;
+}
 
 export const ASSET_SIZE_LIMITS = Object.fromEntries(
-  ASSET_KINDS.map((kind) => [
-    kind,
-    kind === "font_sans" || kind === "font_mono" ? FONT_ASSET_LIMIT : OTHER_ASSET_LIMIT,
-  ])
+  ASSET_KINDS.map((kind) => [kind, assetSizeLimit(kind)])
 );
 
 const COLOR_KEYS = COLOR_TOKENS.flatMap((token) => [`light_${token}`, `dark_${token}`]);
@@ -50,7 +62,10 @@ const TOOLBAR_MAX_ITEMS = 12;
 const TOOLBAR_ITEM_KEYS = new Set(["title", "url", "icon", "enabled"]);
 const TOOLBAR_REQUIRED_KEYS = ["title", "url", "enabled"];
 
-const ASSETS_MAX_ITEMS = 8;
+// Every kind at once: 6 images + 2 fonts + 12 toolbar icons. Derived rather
+// than written out, so adding a kind cannot leave a config able to declare it
+// and unable to send it.
+const ASSETS_MAX_ITEMS = ASSET_KINDS.length;
 const ASSET_ITEM_KEYS = new Set(["kind", "sha256", "size"]);
 const ASSET_REQUIRED_KEYS = ["kind", "sha256", "size"];
 

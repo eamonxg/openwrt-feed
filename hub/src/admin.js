@@ -11,7 +11,8 @@ import {
   MAGIC_CHECKS,
   r2Key,
   contentTypeFor,
-  sniffLoginBgFormat,
+  isFormatTrackedKind,
+  sniffFormat,
   APPROVE_FROM_R2_KINDS,
 } from "./assets.js";
 import { ASSET_SIZE_LIMITS } from "./validate.js";
@@ -129,11 +130,12 @@ async function getPendingAsset(request, env, id, kind) {
   }
 
   // The pending object carries the same customMetadata.format the share/
-  // update flow wrote for login_bg, so Content-Type reflects the actual
-  // sniffed format rather than assuming png.
-  const sniffedJpeg = object.customMetadata?.format === "jpeg";
+  // update flow wrote for every format-tracked kind, so Content-Type reflects
+  // the actual sniffed format rather than assuming the kind's default. The
+  // console branches on this header to pick a sanitizer, so a toolbar icon
+  // mislabelled here would be an SVG fed to the canvas re-encoder.
   const headers = {
-    "content-type": contentTypeFor(kind, sniffedJpeg),
+    "content-type": contentTypeFor(kind, object.customMetadata?.format),
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
   };
@@ -268,10 +270,11 @@ async function approveConfig(request, env, id) {
     }
 
     const sha256 = await sha256Hex(bytes);
-    // The admin page re-encodes login_bg to png, but this re-sniffs the
-    // actual sanitized bytes rather than assuming that — the sniff already
-    // ran above via MAGIC_CHECKS.login_bg, so this can't come back null.
-    const format = kind === "login_bg" ? sniffLoginBgFormat(bytes) : undefined;
+    // Sniffed from the bytes the console actually returned, never assumed
+    // from what it was asked to do: it re-encodes login_bg to png, and leaves
+    // a toolbar icon in whichever of SVG/PNG it arrived as. MAGIC_CHECKS ran
+    // above, so this cannot come back null.
+    const format = sniffFormat(kind, bytes);
     resolved.push({ kind, bytes, size: bytes.byteLength, sha256, format });
   }
 
@@ -280,7 +283,7 @@ async function approveConfig(request, env, id) {
   // flip to 'approved' pointing at bytes that were never written.
   for (const asset of resolved) {
     const options = {};
-    if (asset.kind === "login_bg") {
+    if (isFormatTrackedKind(asset.kind)) {
       options.customMetadata = { format: asset.format };
     }
     await env.R2.put(r2Key("approved", id, asset.kind), asset.bytes, options);

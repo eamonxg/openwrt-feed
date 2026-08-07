@@ -62,6 +62,55 @@ export function sniffLoginBgFormat(bytes) {
   return null;
 }
 
+// A toolbar shortcut icon is whichever of SVG/PNG its author uploaded, so it
+// is format-tracked the same way login_bg is. Those two are the only formats
+// on offer because they are the only two the review console can sanitize
+// (sanitizeSvg and the canvas re-encode) — an icon in any other format could
+// be shared but never approved.
+export function sniffToolbarIconFormat(bytes) {
+  if (isPng(bytes)) return "png";
+  if (isSvg(bytes)) return "svg";
+  return null;
+}
+
+// A toolbar shortcut icon per distinct custom icon the config's shortcuts
+// name, numbered by first appearance. Both the sharing router and the
+// receiving one derive that numbering from the shortcut list itself, so
+// nothing about the mapping travels on the wire and the toolbar item shape in
+// the payload is unchanged — see nth_custom_toolbar_icon in the LuCI app.
+//
+// 12 because that is TOOLBAR_MAX_ITEMS: a shortcut list is capped there, so no
+// config can name a thirteenth distinct icon.
+export const TOOLBAR_ICON_KINDS = Array.from(
+  { length: 12 },
+  (_, i) => `toolbar_icon_${i}`
+);
+
+const TOOLBAR_ICON_KIND_SET = new Set(TOOLBAR_ICON_KINDS);
+
+export function isToolbarIconKind(kind) {
+  return TOOLBAR_ICON_KIND_SET.has(kind);
+}
+
+// Kinds whose stored Content-Type cannot be derived from the kind alone: the
+// bytes decide, and the format sniffed when they were accepted is carried in
+// R2 customMetadata. Every path that writes such an object has to record it,
+// and every path that serves one has to read it back.
+export function isFormatTrackedKind(kind) {
+  return kind === "login_bg" || isToolbarIconKind(kind);
+}
+
+// The format to record for `kind`, or undefined when the kind pins its own
+// Content-Type. Returns null when the bytes match no accepted format — every
+// caller has already run MAGIC_CHECKS by then, so that cannot happen; it is
+// the same "sniff the real bytes rather than assume" posture approve takes
+// after the console has rewritten them.
+export function sniffFormat(kind, bytes) {
+  if (kind === "login_bg") return sniffLoginBgFormat(bytes);
+  if (isToolbarIconKind(kind)) return sniffToolbarIconFormat(bytes);
+  return undefined;
+}
+
 // Kinds whose approved bytes are byte-for-byte the pending bytes, so the
 // admin console has no reason to download them, base64 them, and post them
 // straight back: approve reads these from pending/ in the Worker instead.
@@ -89,6 +138,12 @@ export const MAGIC_CHECKS = {
   login_bg: (bytes) => sniffLoginBgFormat(bytes) !== null,
   font_sans: isWoff2,
   font_mono: isWoff2,
+  ...Object.fromEntries(
+    TOOLBAR_ICON_KINDS.map((kind) => [
+      kind,
+      (bytes) => sniffToolbarIconFormat(bytes) !== null,
+    ])
+  ),
 };
 
 const STATIC_CONTENT_TYPES = {
@@ -101,11 +156,22 @@ const STATIC_CONTENT_TYPES = {
   font_mono: "font/woff2",
 };
 
-// login_bg's Content-Type depends on which format was sniffed at share time
-// (recorded in R2 customMetadata) — pass that in as `sniffedJpeg`.
-export function contentTypeFor(kind, sniffedJpeg) {
+// For a format-tracked kind (see isFormatTrackedKind) the Content-Type comes
+// from the format recorded in R2 customMetadata at write time — pass that
+// string in as `format`. Every other kind pins its own and ignores it.
+//
+// The fallbacks are the format the review console produces: it re-encodes
+// login_bg to PNG unconditionally, and leaves a toolbar icon in whichever of
+// the two formats it arrived as (an SVG through sanitizeSvg, a PNG through the
+// canvas). Missing metadata therefore reads as PNG, never as SVG — guessing
+// "svg" for a raster byte stream would hand a browser a mislabelled image,
+// while the reverse merely renders nothing.
+export function contentTypeFor(kind, format) {
   if (kind === "login_bg") {
-    return sniffedJpeg ? "image/jpeg" : "image/png";
+    return format === "jpeg" ? "image/jpeg" : "image/png";
+  }
+  if (isToolbarIconKind(kind)) {
+    return format === "svg" ? "image/svg+xml" : "image/png";
   }
   return STATIC_CONTENT_TYPES[kind];
 }
@@ -154,15 +220,18 @@ async function serveAsset(env, id, kind) {
     throw new HttpError(404, "not_found", "Asset not found.");
   }
 
-  const sniffedJpeg = object.customMetadata?.format === "jpeg";
+  const contentType = contentTypeFor(kind, object.customMetadata?.format);
   const headers = {
-    "content-type": contentTypeFor(kind, sniffedJpeg),
+    "content-type": contentType,
     "cache-control": "public, max-age=604800, immutable",
     // Every /assets/ response gets nosniff, not just SVG — it costs nothing
     // and closes off MIME-sniffing surprises for any kind.
     "x-content-type-options": "nosniff",
   };
-  if (kind === "logo_svg") {
+  // Keyed off the resolved Content-Type, not off the kind: a toolbar icon is
+  // SVG or PNG depending on its bytes, and the whole point of this header is
+  // that an SVG the browser is willing to parse can reach nothing else.
+  if (contentType === "image/svg+xml") {
     headers["content-security-policy"] = "default-src 'none'";
   }
 

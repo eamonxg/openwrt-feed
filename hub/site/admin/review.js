@@ -24,6 +24,25 @@ export function bytesToBase64(bytes) {
 const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg"]);
 const MAX_IMAGE_DIMENSION = 4096;
 
+// A toolbar shortcut icon is SVG or PNG depending on what its author uploaded,
+// so its sanitizer is picked from the bytes rather than from the kind: running
+// an SVG through the canvas would rasterize it (and the approve endpoint's
+// magic check would then still pass, so nothing downstream would notice), and
+// running a PNG through sanitizeSvg would produce garbage.
+//
+// The Content-Type comes from the customMetadata format the share/update flow
+// sniffed and stored, which is exactly the format approve re-sniffs from
+// whatever this function returns.
+const isToolbarIconKind = (kind) => /^toolbar_icon_(?:[0-9]|1[01])$/.test(kind);
+
+function looksLikeSvg(bytes, contentType) {
+  if (contentType && contentType.indexOf("svg") !== -1) return true;
+  const head = new TextDecoder("utf-8", { fatal: false })
+    .decode(bytes.subarray(0, 512))
+    .replace(/^\s+/, "");
+  return head.startsWith("<svg") || head.startsWith("<?xml");
+}
+
 export async function fetchPendingAsset(configId, kind) {
   const res = await apiFetch(
     "/api/v1/admin/assets/" + encodeURIComponent(configId) + "/" + encodeURIComponent(kind)
@@ -100,8 +119,9 @@ export async function sanitizeAsset(configId, kind) {
     return { ok: false, message: err.message || String(err) };
   }
   const { bytes, contentType } = fetched;
+  const svgIcon = isToolbarIconKind(kind) && looksLikeSvg(bytes, contentType);
 
-  if (kind === "logo_svg") {
+  if (kind === "logo_svg" || svgIcon) {
     try {
       const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
       const sanitized = sanitizeSvg(text);
@@ -113,7 +133,7 @@ export async function sanitizeAsset(configId, kind) {
     }
   }
 
-  if (CANVAS_REENCODE_KINDS.has(kind)) {
+  if (CANVAS_REENCODE_KINDS.has(kind) || isToolbarIconKind(kind)) {
     let bitmap;
     try {
       const srcBlob = new Blob([bytes], { type: contentType || "image/png" });

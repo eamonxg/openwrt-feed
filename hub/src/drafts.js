@@ -12,7 +12,7 @@
 import { HttpError, deviceFromToken, bumpQuota } from "./auth.js";
 import { shortId, canonicalJson, contentHash, sha256Hex } from "./ids.js";
 import { validateMeta, validatePayload, ASSET_SIZE_LIMITS } from "./validate.js";
-import { MAGIC_CHECKS, r2Key, sniffLoginBgFormat } from "./assets.js";
+import { MAGIC_CHECKS, r2Key, isFormatTrackedKind, sniffFormat } from "./assets.js";
 import { jsonResponse, errorResponse, readJsonBounded } from "./http.js";
 import { signTicket, verifyTicket, TICKET_TTL_SECONDS } from "./tickets.js";
 import { insertConfigWithAssets, updateConfigWithAssets } from "./configs.js";
@@ -197,7 +197,10 @@ async function putDraftAsset(request, env, draftId, kind) {
   // sha256 记进 customMetadata：提交时据此确认这份字节确实是 manifest 声明的
   // 那一份，不必把 1.2MB 读回内存重算一遍。
   const customMetadata = { sha256: hash };
-  if (kind === "login_bg") customMetadata.format = sniffLoginBgFormat(bytes);
+  // 记的是嗅探出来的格式,而不是 kind 推出来的:login_bg 可能是 PNG 也可能是
+  // JPEG,工具栏图标可能是 PNG 也可能是 SVG,而这一列决定了下载时的
+  // Content-Type —— 一张按 .png 发出去的 SVG 在浏览器里就是不显示。
+  if (isFormatTrackedKind(kind)) customMetadata.format = sniffFormat(kind, bytes);
 
   await env.R2.put(r2Key("draft", draftId, kind), bytes, { customMetadata });
 
@@ -225,7 +228,7 @@ function draftSource(draftId, kind, format) {
         throw new HttpError(409, "assets_incomplete", `Asset ${kind} was never uploaded.`);
       }
       const options = {};
-      if (kind === "login_bg") options.customMetadata = { format };
+      if (isFormatTrackedKind(kind)) options.customMetadata = { format };
       await env.R2.put(key, object.body, options);
     },
   };
