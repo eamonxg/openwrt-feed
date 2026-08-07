@@ -816,3 +816,31 @@ describe("validateNickname", () => {
     expectHttpError(() => validateNickname(42), 400, "invalid_nickname");
   });
 });
+
+// 登录卡的三个可选键与 main_bg 同界同形,一起进 layout
+describe("validatePayload - login bg tunables", () => {
+  it("accepts the three optional login_bg keys and returns them verbatim", () => {
+    const payload = buildPayload();
+    payload.layout = buildLayout({
+      struct_login_bg_alpha: "85%",
+      struct_login_bg_blur: "20px",
+      struct_login_bg_scrim: "30%",
+    });
+    const cleaned = validatePayload(payload);
+    expect(cleaned.layout.struct_login_bg_alpha).toBe("85%");
+    expect(cleaned.layout.struct_login_bg_blur).toBe("20px");
+    expect(cleaned.layout.struct_login_bg_scrim).toBe("30%");
+  });
+
+  it("rejects out-of-range login_bg keys", () => {
+    for (const bad of [
+      { struct_login_bg_alpha: "49%" },
+      { struct_login_bg_blur: "41px" },
+      { struct_login_bg_scrim: "71%" },
+    ]) {
+      const payload = buildPayload();
+      payload.layout = buildLayout(bad);
+      expectHttpError(() => validatePayload(payload), 400, "bad_layout");
+    }
+  });
+});

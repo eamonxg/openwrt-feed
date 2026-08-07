@@ -54,14 +54,21 @@ const LAYOUT_KEYS = [
 const NAV_TYPES = ["mega-menu", "dropdown", "sidebar"];
 const BOOL01 = ["0", "1"];
 
-// The main-page background's three tunables travel as OPTIONAL layout keys:
-// schema stays v1, an older device that never sends them stays valid, and a
-// receiver that never reads them falls back to the theme's CSS defaults.
-const OPTIONAL_LAYOUT_KEYS = ["struct_main_bg_alpha", "struct_main_bg_blur", "struct_main_bg_scrim"];
+// The background tunables (main page and login card) travel as OPTIONAL
+// layout keys: schema stays v1, an older device that never sends them stays
+// valid, and a receiver that never reads them falls back to the theme's CSS
+// defaults.
+const OPTIONAL_LAYOUT_KEYS = [
+  "struct_main_bg_alpha", "struct_main_bg_blur", "struct_main_bg_scrim",
+  "struct_login_bg_alpha", "struct_login_bg_blur", "struct_login_bg_scrim",
+];
 const MAIN_BG_BOUNDS = {
   struct_main_bg_alpha: { pattern: /^(\d{1,3})%$/, min: 50, max: 100 },
   struct_main_bg_blur: { pattern: /^(\d{1,3})px$/, min: 0, max: 40 },
   struct_main_bg_scrim: { pattern: /^(\d{1,3})%$/, min: 0, max: 70 },
+  struct_login_bg_alpha: { pattern: /^(\d{1,3})%$/, min: 50, max: 100 },
+  struct_login_bg_blur: { pattern: /^(\d{1,3})px$/, min: 0, max: 40 },
+  struct_login_bg_scrim: { pattern: /^(\d{1,3})%$/, min: 0, max: 70 },
 };
 
 const TYPOGRAPHY_KEYS = ["font_sans", "font_mono", "struct_font_sans", "struct_font_mono"];
