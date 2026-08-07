@@ -54,6 +54,16 @@ const LAYOUT_KEYS = [
 const NAV_TYPES = ["mega-menu", "dropdown", "sidebar"];
 const BOOL01 = ["0", "1"];
 
+// The main-page background's three tunables travel as OPTIONAL layout keys:
+// schema stays v1, an older device that never sends them stays valid, and a
+// receiver that never reads them falls back to the theme's CSS defaults.
+const OPTIONAL_LAYOUT_KEYS = ["struct_main_bg_alpha", "struct_main_bg_blur", "struct_main_bg_scrim"];
+const MAIN_BG_BOUNDS = {
+  struct_main_bg_alpha: { pattern: /^(\d{1,3})%$/, min: 50, max: 100 },
+  struct_main_bg_blur: { pattern: /^(\d{1,3})px$/, min: 0, max: 40 },
+  struct_main_bg_scrim: { pattern: /^(\d{1,3})%$/, min: 0, max: 70 },
+};
+
 const TYPOGRAPHY_KEYS = ["font_sans", "font_mono", "struct_font_sans", "struct_font_mono"];
 const FONT_SANS_TOKENS = ["default", "system", "geist-sans", "nunito", "space-grotesk"];
 const FONT_MONO_TOKENS = ["default", "jetbrains-mono", "maple-mono", "fira-code", "cascadia-code"];
@@ -166,7 +176,12 @@ function validateColors(colors) {
 
 function validateLayout(layout) {
   if (!isPlainObject(layout)) throw badLayout();
-  if (!hasExactKeys(layout, LAYOUT_KEYS)) throw badLayout();
+  for (const key of Object.keys(layout)) {
+    if (!LAYOUT_KEYS.includes(key) && !OPTIONAL_LAYOUT_KEYS.includes(key)) throw badLayout();
+  }
+  for (const key of LAYOUT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(layout, key)) throw badLayout();
+  }
 
   const { nav_type, struct_spacing, struct_radius_base, struct_content_width_centered, toolbar_enabled } = layout;
 
@@ -183,7 +198,21 @@ function validateLayout(layout) {
 
   if (!BOOL01.includes(toolbar_enabled)) throw badLayout();
 
-  return { nav_type, struct_spacing, struct_radius_base, struct_content_width_centered, toolbar_enabled };
+  const cleaned = { nav_type, struct_spacing, struct_radius_base, struct_content_width_centered, toolbar_enabled };
+
+  for (const key of OPTIONAL_LAYOUT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(layout, key)) continue;
+    const value = layout[key];
+    if (typeof value !== "string") throw badLayout();
+    const { pattern, min, max } = MAIN_BG_BOUNDS[key];
+    const match = pattern.exec(value);
+    if (!match) throw badLayout();
+    const n = Number(match[1]);
+    if (n < min || n > max) throw badLayout();
+    cleaned[key] = value;
+  }
+
+  return cleaned;
 }
 
 function validateTypography(typography) {

@@ -393,6 +393,48 @@ describe("validatePayload - layout", () => {
     payload.layout.extra = "x";
     expectHttpError(() => validatePayload(payload), 400, "bad_layout");
   });
+
+  it("accepts the three optional main_bg keys and returns them verbatim", () => {
+    const payload = buildPayload();
+    payload.layout = buildLayout({
+      struct_main_bg_alpha: "67%",
+      struct_main_bg_blur: "20px",
+      struct_main_bg_scrim: "20%",
+    });
+    const cleaned = validatePayload(payload);
+    expect(cleaned.layout.struct_main_bg_alpha).toBe("67%");
+    expect(cleaned.layout.struct_main_bg_blur).toBe("20px");
+    expect(cleaned.layout.struct_main_bg_scrim).toBe("20%");
+  });
+
+  it("omits the optional main_bg keys from cleaned.layout when absent", () => {
+    const cleaned = validatePayload(buildPayload());
+    expect(cleaned.layout).toEqual(buildLayout());
+  });
+
+  it("rejects out-of-range or malformed main_bg keys", () => {
+    for (const bad of [
+      { struct_main_bg_alpha: "49%" },   // below 50
+      { struct_main_bg_alpha: "101%" },  // above 100
+      { struct_main_bg_alpha: "67" },    // missing unit
+      { struct_main_bg_blur: "41px" },   // above 40
+      { struct_main_bg_blur: "20%" },    // wrong unit
+      { struct_main_bg_scrim: "71%" },   // above 70
+      { struct_main_bg_scrim: "-1%" },   // sign not in pattern
+    ]) {
+      const payload = buildPayload();
+      payload.layout = buildLayout(bad);
+      expectHttpError(() => validatePayload(payload), 400, "bad_layout");
+    }
+  });
+
+  // struct_main_bg itself is asset-derived (the receiving device writes its
+  // own url() after landing the bytes) — it must never travel in the payload.
+  it("still rejects struct_main_bg itself as an unknown layout key", () => {
+    const payload = buildPayload();
+    payload.layout = buildLayout({ struct_main_bg: "url('/x.png')" });
+    expectHttpError(() => validatePayload(payload), 400, "bad_layout");
+  });
 });
 
 // ---------------------------------------------------------------------------
