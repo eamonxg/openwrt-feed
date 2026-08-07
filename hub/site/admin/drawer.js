@@ -389,6 +389,10 @@ function renderActionSection(detail) {
       post(`/configs/${encodeURIComponent(detail.id)}/takedown`, "下架");
     });
     actions.append(btn);
+    // 在架上的配置拿不到永久删除,那是有意的 —— 不可逆的销毁前面必须隔着
+    // 一步可逆的操作。但界面此前没有任何地方说出这件事,于是「怎么删除」
+    // 看上去像个缺失的功能而不是一道闸。这句话就是那道闸的说明。
+    section.append(el("div", { class: "empty", text: "永久删除需先下架:下架后重新打开这份配置,动作区会多出「永久删除」。" }));
     return section;
   }
 
