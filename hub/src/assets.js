@@ -52,18 +52,24 @@ function isSvg(bytes) {
   return text.startsWith("<svg") || text.startsWith("<?xml");
 }
 
-// login_bg accepts either PNG or JPEG bytes; callers that need to know which
-// one matched (to record it for Content-Type on download) should use
-// `sniffLoginBgFormat` directly instead of the boolean-only MAGIC_CHECKS
+// login_bg / main_bg accept either PNG or JPEG bytes; callers that need to
+// know which one matched (to record it for Content-Type on download) should
+// use `sniffBgFormat` directly instead of the boolean-only MAGIC_CHECKS
 // entry.
-export function sniffLoginBgFormat(bytes) {
+export function sniffBgFormat(bytes) {
   if (isPng(bytes)) return "png";
   if (isJpeg(bytes)) return "jpeg";
   return null;
 }
 
+// The two full-page background kinds share one pipeline end to end: same
+// magic sniff, same format tracking, same review-console re-encode.
+export function isBgKind(kind) {
+  return kind === "login_bg" || kind === "main_bg";
+}
+
 // A toolbar shortcut icon is whichever of SVG/PNG its author uploaded, so it
-// is format-tracked the same way login_bg is. Those two are the only formats
+// is format-tracked the same way the bg kinds are. Those two are the only formats
 // on offer because they are the only two the review console can sanitize
 // (sanitizeSvg and the canvas re-encode) — an icon in any other format could
 // be shared but never approved.
@@ -97,7 +103,7 @@ export function isToolbarIconKind(kind) {
 // R2 customMetadata. Every path that writes such an object has to record it,
 // and every path that serves one has to read it back.
 export function isFormatTrackedKind(kind) {
-  return kind === "login_bg" || isToolbarIconKind(kind);
+  return isBgKind(kind) || isToolbarIconKind(kind);
 }
 
 // The format to record for `kind`, or undefined when the kind pins its own
@@ -106,7 +112,7 @@ export function isFormatTrackedKind(kind) {
 // the same "sniff the real bytes rather than assume" posture approve takes
 // after the console has rewritten them.
 export function sniffFormat(kind, bytes) {
-  if (kind === "login_bg") return sniffLoginBgFormat(bytes);
+  if (isBgKind(kind)) return sniffBgFormat(bytes);
   if (isToolbarIconKind(kind)) return sniffToolbarIconFormat(bytes);
   return undefined;
 }
@@ -135,7 +141,8 @@ export const MAGIC_CHECKS = {
   favicon_ico: isIco,
   pwa_icon_192: isPng,
   pwa_icon_512: isPng,
-  login_bg: (bytes) => sniffLoginBgFormat(bytes) !== null,
+  login_bg: (bytes) => sniffBgFormat(bytes) !== null,
+  main_bg: (bytes) => sniffBgFormat(bytes) !== null,
   font_sans: isWoff2,
   font_mono: isWoff2,
   ...Object.fromEntries(
@@ -167,7 +174,7 @@ const STATIC_CONTENT_TYPES = {
 // "svg" for a raster byte stream would hand a browser a mislabelled image,
 // while the reverse merely renders nothing.
 export function contentTypeFor(kind, format) {
-  if (kind === "login_bg") {
+  if (isBgKind(kind)) {
     return format === "jpeg" ? "image/jpeg" : "image/png";
   }
   if (isToolbarIconKind(kind)) {

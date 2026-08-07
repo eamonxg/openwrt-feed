@@ -42,7 +42,8 @@ function base64ToBytes(b64) {
 // raw {kind, data_b64} entries supplied in the request body — same kinds,
 // matching decoded sha256/size. Step ④: per-kind magic-byte sniff on the
 // decoded bytes. Returns [{kind, bytes, format}] ready for R2/D1 writes,
-// where `format` is only set (to "png"|"jpeg") for kind === "login_bg".
+// where `format` is only set (to "png"|"jpeg") for the bg kinds
+// (login_bg / main_bg).
 async function reconcileAssets(manifest, bodyAssets) {
   if (manifest.length === 0) {
     if (bodyAssets !== undefined && !(Array.isArray(bodyAssets) && bodyAssets.length === 0)) {

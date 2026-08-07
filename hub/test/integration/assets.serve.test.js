@@ -126,6 +126,24 @@ describe("GET /assets/:id/:kind", () => {
     await jpegRes.arrayBuffer();
   });
 
+  it("serves an approved main_bg as image/png or image/jpeg based on stored format metadata", async () => {
+    const pngShare = await shareWithAssets([{ kind: "main_bg" }], "#100007");
+    await approve(pngShare.id, "main_bg", base64ToBytes(PNG_1X1_BASE64), { format: "png" });
+
+    const pngRes = await SELF.fetch(`https://example.com/assets/${pngShare.id}/main_bg`);
+    expect(pngRes.status).toBe(200);
+    expect(pngRes.headers.get("content-type")).toBe("image/png");
+    await pngRes.arrayBuffer();
+
+    const jpegShare = await shareWithAssets([{ kind: "main_bg", base64: JPEG_BASE64 }], "#100008");
+    await approve(jpegShare.id, "main_bg", base64ToBytes(JPEG_BASE64), { format: "jpeg" });
+
+    const jpegRes = await SELF.fetch(`https://example.com/assets/${jpegShare.id}/main_bg`);
+    expect(jpegRes.status).toBe(200);
+    expect(jpegRes.headers.get("content-type")).toBe("image/jpeg");
+    await jpegRes.arrayBuffer();
+  });
+
   it("a rejected/never-approved asset among several stays 404 while its sibling is approved", async () => {
     const { id } = await shareWithAssets(
       [{ kind: "favicon_png" }, { kind: "logo_svg", base64: SVG_BASE64 }],

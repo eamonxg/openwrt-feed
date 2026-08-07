@@ -40,11 +40,11 @@ describe("exported constants", () => {
     ]);
   });
 
-  it("ASSET_KINDS has exactly 20 kinds", () => {
-    expect(ASSET_KINDS).toHaveLength(20);
+  it("ASSET_KINDS has exactly 21 kinds", () => {
+    expect(ASSET_KINDS).toHaveLength(21);
     expect(ASSET_KINDS).toEqual([
       "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192",
-      "pwa_icon_512", "login_bg", "font_sans", "font_mono",
+      "pwa_icon_512", "login_bg", "main_bg", "font_sans", "font_mono",
       // 每个不同的自定义快捷方式图标一个槽位，按首次出现编号。12 = 快捷方式
       // 本身的上限，所以没有配置能凑出第 13 个不同的图标。
       "toolbar_icon_0", "toolbar_icon_1", "toolbar_icon_2", "toolbar_icon_3",

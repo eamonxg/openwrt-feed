@@ -17,7 +17,7 @@ export const COLOR_TOKENS = [
 
 export const ASSET_KINDS = [
   "logo_svg", "favicon_png", "favicon_ico", "pwa_icon_192",
-  "pwa_icon_512", "login_bg", "font_sans", "font_mono",
+  "pwa_icon_512", "login_bg", "main_bg", "font_sans", "font_mono",
   ...TOOLBAR_ICON_KINDS,
 ];
 
@@ -28,7 +28,7 @@ const OTHER_ASSET_LIMIT = 2097152; // 2 MiB
 // carries every non-passthrough kind's bytes in one JSON body capped at
 // ADMIN_APPROVE_BODY_BYTES (25 MB), so that is the "shareable but never
 // approvable" failure the font work already had to dig out once.
-// Worst case now: 6*2 MiB + 12*256 KiB = 15 MiB, ~20 MB base64.
+// Worst case now: 7*2 MiB + 12*256 KiB = 17 MiB, ~23 MB base64.
 const TOOLBAR_ICON_ASSET_LIMIT = 262144; // 256 KiB
 
 function assetSizeLimit(kind) {
