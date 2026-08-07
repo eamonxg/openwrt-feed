@@ -21,7 +21,7 @@ export function bytesToBase64(bytes) {
 // createImageBitmap + canvas re-encode to PNG strips any embedded
 // metadata/polyglot tricks in raster formats — this applies to every
 // browser-decodable raster kind except favicon_ico (see note below).
-const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg"]);
+const CANVAS_REENCODE_KINDS = new Set(["favicon_png", "pwa_icon_192", "pwa_icon_512", "login_bg", "main_bg"]);
 const MAX_IMAGE_DIMENSION = 4096;
 
 // A toolbar shortcut icon is SVG or PNG depending on what its author uploaded,
@@ -156,8 +156,8 @@ export async function sanitizeAsset(configId, kind) {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
-      // login_bg accepts jpeg input at share time but is always
-      // re-encoded to png here, per the functional contract.
+      // the bg kinds (login_bg / main_bg) accept jpeg input at share time
+      // but are always re-encoded to png here, per the functional contract.
       const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!pngBlob) throw new Error("canvas.toBlob returned null.");
       const outBytes = new Uint8Array(await pngBlob.arrayBuffer());
