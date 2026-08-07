@@ -14,6 +14,9 @@ import { closeDrawer, confirmDestructive, openDrawer } from "./drawer.js";
 // Auth / session
 // -----------------------------------------------------------------------------
 
+// index.html's inline bootstrap reads this same key to pick a screen before
+// any module loads, so the literal exists in two places. pages.test.js fails
+// if they drift.
 const TOKEN_KEY = "aurora_hub_admin_token";
 
 export function getToken() {
@@ -562,11 +565,65 @@ document.getElementById("drawer-scrim").addEventListener("click", closeDrawer);
 // Boot
 // -----------------------------------------------------------------------------
 
-document.getElementById("login-form").addEventListener("submit", (event) => {
+// Signing in verifies the token BEFORE storing it and before the console is
+// ever shown. The old order — store, show the app, let the first background
+// request 401 and bounce back — meant a wrong password flashed the whole
+// console for one round trip before returning to a login screen, which reads
+// as "I was in and got thrown out" rather than "that token is wrong".
+//
+// The check is a bare fetch(), deliberately not apiFetch(): apiFetch's 401
+// branch clears the token and calls showLogin(), which would wipe the specific
+// message we are about to write with a generic "session expired" — and it
+// would have to read the token out of storage, which is exactly what must not
+// happen until it is known to work.
+//
+// /admin/stats is the cheapest authenticated GET there is (four COUNTs in one
+// statement). boot() fetches it again a moment later; one duplicated scalar
+// query per sign-in buys a login path with no second entry point into the app.
+const loginForm = document.getElementById("login-form");
+const loginSubmit = loginForm.querySelector("button[type=submit]");
+
+loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = document.getElementById("login-token");
+  const errorBox = document.getElementById("login-error");
   const token = input.value.trim();
   if (!token) return;
+
+  const label = loginSubmit.textContent;
+  loginSubmit.disabled = true;
+  loginSubmit.textContent = "Verifying…";
+  errorBox.textContent = "";
+
+  let res;
+  try {
+    res = await fetch("/api/v1/admin/stats", { headers: { Authorization: "Bearer " + token } });
+  } catch (err) {
+    errorBox.textContent = "Could not reach the server: " + (err.message || err);
+    return;
+  } finally {
+    loginSubmit.disabled = false;
+    loginSubmit.textContent = label;
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const code = body && body.error && body.error.code;
+    // admin_disabled is a 500 about the deployment, not about the token —
+    // telling the operator "wrong token" there sends them off retyping a
+    // token that was never going to work.
+    if (code === "admin_disabled") {
+      errorBox.textContent = "This deployment has no ADMIN_TOKEN configured — the console is disabled.";
+    } else if (res.status === 401) {
+      errorBox.textContent = "That token is not valid.";
+    } else {
+      errorBox.textContent =
+        (body && body.error && body.error.message) || ("Sign-in failed (" + res.status + ").");
+    }
+    // Nothing was stored and nothing was shown: the screen has not moved.
+    return;
+  }
+
   setToken(token);
   input.value = "";
   boot();

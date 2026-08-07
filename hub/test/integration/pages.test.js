@@ -114,6 +114,75 @@ describe("admin console subresources load from every entry URL", () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// The admin console's sign-in must never show the wrong screen, not even for
+// one frame. Two bugs of the same shape used to be visible here:
+//
+//   - a wrong token flashed the entire console before bouncing back, because
+//     the token was stored and the console shown BEFORE anything checked it;
+//   - an already signed-in operator saw the password box on every refresh,
+//     because index.html marked the login screen visible and only app.js —
+//     deferred behind its whole module graph — hid it again.
+//
+// Neither can be exercised from the Workers pool, which has no DOM. These are
+// static scans over the bytes the Worker actually serves, in the spirit of the
+// external-reference scan below: they pin the ordering and the initial markup
+// that made the flash possible, not the rendering itself.
+// ---------------------------------------------------------------------------
+
+describe("admin console — no wrong-screen flash", () => {
+  async function fetchText(path) {
+    const res = await SELF.fetch(`https://example.com${path}`, { redirect: "manual" });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  it("ships both screens hidden, so neither can be painted before JS picks one", async () => {
+    const html = await fetchText("/admin/");
+
+    for (const id of ["login-view", "app-view"]) {
+      const tag = html.match(new RegExp(`<div id="${id}"[^>]*>`));
+      expect(tag, `<div id="${id}"> not found`).not.toBeNull();
+      expect(tag[0]).toContain("hidden");
+    }
+  });
+
+  it("picks the screen from an inline script, not from the deferred module", async () => {
+    const html = await fetchText("/admin/");
+
+    // An inline <script> with no src — the only kind that runs before the
+    // deferred module and therefore before the first paint.
+    expect(html).toMatch(/<script>[\s\S]*?getElementById\([\s\S]*?\)\.hidden = false/);
+  });
+
+  it("reads the same storage key in the inline bootstrap and in app.js", async () => {
+    // The key is deliberately duplicated (the bootstrap must run before any
+    // module loads). This is the check that keeps the copy honest.
+    const js = await fetchText("/admin/app.js");
+    const declared = js.match(/TOKEN_KEY\s*=\s*"([^"]+)"/);
+    expect(declared, "app.js no longer declares TOKEN_KEY as a string literal").not.toBeNull();
+
+    const html = await fetchText("/admin/");
+    expect(html).toContain(`"${declared[1]}"`);
+  });
+
+  it("verifies the token before storing it or leaving the login screen", async () => {
+    const js = await fetchText("/admin/app.js");
+
+    const handlerAt = js.indexOf('loginForm.addEventListener("submit"');
+    expect(handlerAt, "login submit handler not found").toBeGreaterThan(-1);
+    const handler = js.slice(handlerAt);
+
+    const verifyAt = handler.search(/await fetch\(/);
+    const storeAt = handler.indexOf("setToken(");
+    expect(verifyAt, "sign-in no longer awaits a verification request").toBeGreaterThan(-1);
+    expect(storeAt, "sign-in no longer stores the token").toBeGreaterThan(-1);
+    // The whole bug was this ordering. Storing first is what put the console
+    // on screen for one round trip on a wrong password.
+    expect(storeAt).toBeGreaterThan(verifyAt);
+  });
+});
+
 describe("Global Constraints — zero external references", () => {
   // Matches a literal http:// or https:// anywhere except inside an
   // xmlns="http://www.w3.org/..." declaration (the one exemption the task

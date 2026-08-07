@@ -17,7 +17,12 @@
 </head>
 <body>
 
-<div id="login-view">
+<!-- Both screens are born hidden. Whichever one is right gets shown by the
+     inline bootstrap at the bottom of this file, before the first paint.
+     Marking the login screen visible here instead would show a password box
+     to everyone who is already signed in, on every refresh, for as long as
+     app.js takes to load — see that script's comment. -->
+<div id="login-view" hidden>
   <h2>Aurora Themes Hub — Admin</h2>
   <form id="login-form">
     <input type="password" id="login-token" placeholder="ADMIN_TOKEN" autocomplete="off" />
@@ -79,6 +84,34 @@
   <div class="drawer-scrim" id="drawer-scrim"></div>
   <aside class="drawer-panel" id="drawer-panel"></aside>
 </div>
+
+<!-- Runs synchronously, at the end of the body, before the document is first
+     painted and long before app.js executes: a type="module" script is
+     deferred, and app.js only decides which screen to show after it and every
+     module it imports (views.js, drawer.js, and drawer.js's own imports) have
+     been fetched and evaluated. Leaving the initial choice to app.js means one
+     to several frames of the wrong screen — which for an already signed-in
+     operator is a password prompt flashing on every refresh.
+     This only picks the screen; app.js still corrects it from the real answer
+     (a stored token that the server has since rejected lands on 401 and gets
+     bounced back to login by apiFetch).
+     TOKEN_KEY is duplicated from app.js on purpose — it has to be readable
+     before any module loads. pages.test.js fails if the two ever drift. -->
+<script>
+  (function () {
+    var TOKEN_KEY = "aurora_hub_admin_token";
+    var signedIn = false;
+    try {
+      signedIn = Boolean(sessionStorage.getItem(TOKEN_KEY));
+    } catch (err) {
+      // Storage blocked (private mode, third-party cookie rules). Falling
+      // back to the login screen is the honest guess: without storage there
+      // is no session to resume.
+      signedIn = false;
+    }
+    document.getElementById(signedIn ? "app-view" : "login-view").hidden = false;
+  })();
+</script>
 
 <script type="module" src="/admin/app.js"></script>
 </body>
