@@ -17,6 +17,9 @@
 //      rules described in the task brief (on* handlers, href/xlink:href
 //      that isn't a local "#fragment", any "url(...)" reference that isn't
 //      "url(#...)").
+//   2b. declareNamespaces(root)  re-asserts the xmlns declarations the
+//      output needs to be a renderable standalone SVG rather than merely a
+//      safe one — see NAMESPACE_ATTRS for why they are pinned, not trusted.
 //   3. serialize(node)  re-emits the surviving tree as XML text, escaping
 //      all text/attribute content so nothing that survives stage 2 can ever
 //      re-become live markup (this is what makes CDATA- or entity-hidden
@@ -76,6 +79,30 @@ function isAttrAllowed(name) {
 }
 
 const HREF_ATTRS = new Set(["href", "xlink:href"]);
+
+// Namespace declarations, which the whitelist above deliberately does not
+// cover — they are not presentation, and they are not safe to pass through
+// verbatim either.
+//
+// They still have to survive, because being safe is only half the job: the
+// bytes are served as image/svg+xml and drawn in an <img>, so they are parsed
+// as XML, and an <svg> root with no xmlns is not an SVG document at all. It
+// parses cleanly and draws nothing. Dropping xmlns is how a good icon came
+// back from moderation as a broken-image glyph.
+//
+// The values are pinned rather than trusted: an arbitrary xmlns would let an
+// author re-home this whole whitelisted tree into another namespace (XHTML,
+// say), where the same element names are a different language with different
+// powers. Declaring one of these two URIs is the only thing a namespace
+// declaration is allowed to say here; anything else is dropped like any other
+// one-veto failure.
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
+
+const NAMESPACE_ATTRS = new Map([
+  ["xmlns", SVG_NS],
+  ["xmlns:xlink", XLINK_NS],
+]);
 
 // ---------------------------------------------------------------------------
 // Tiny XML tokenizer/parser
@@ -429,6 +456,17 @@ function sanitizeElement(node) {
   const attrs = [];
   for (const [rawName, value] of node.attrs) {
     if (/^on/i.test(rawName)) continue; // one-veto: any event handler
+
+    const pinnedNs = NAMESPACE_ATTRS.get(rawName);
+    if (pinnedNs !== undefined) {
+      // Kept only when it declares the URI it is supposed to declare. The
+      // root's declarations are re-asserted after sanitization anyway (see
+      // declareNamespaces); this branch is what lets an inner element's own
+      // redundant-but-correct declaration through unchanged.
+      if (value.trim() === pinnedNs) attrs.push([rawName, pinnedNs]);
+      continue;
+    }
+
     if (!isAttrAllowed(rawName)) continue; // not on the whitelist at all
 
     if (HREF_ATTRS.has(rawName) && !value.trim().startsWith("#")) {
@@ -462,6 +500,33 @@ function sanitizeElement(node) {
   }
 
   return { type: "element", name: node.name, attrs, children };
+}
+
+// Whether anything in the surviving tree still speaks the xlink prefix —
+// xlink:href is on the whitelist, so it can, and a prefix used without a
+// declaration is a document no XML parser will accept.
+function usesXlinkPrefix(node) {
+  if (node.type !== "element") return false;
+  return (
+    node.attrs.some(([name]) => name.startsWith("xlink:")) ||
+    node.children.some(usesXlinkPrefix)
+  );
+}
+
+// Re-asserts, on the root, the declarations the serialized document needs to
+// stand on its own. Hoisting to the root loses nothing: every declaration an
+// inner element could still be carrying was pinned to one of these same two
+// URIs on the way through sanitizeElement. xmlns is unconditional — the
+// output is only an image if it is there — while xmlns:xlink is only emitted
+// when something actually uses the prefix, so the common icon does not pay
+// 34 bytes for a namespace it never mentions.
+function declareNamespaces(root) {
+  const declarations = [["xmlns", SVG_NS]];
+  if (usesXlinkPrefix(root)) declarations.push(["xmlns:xlink", XLINK_NS]);
+  root.attrs = [
+    ...declarations,
+    ...root.attrs.filter(([name]) => !NAMESPACE_ATTRS.has(name)),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +593,7 @@ export function sanitizeSvg(svgText) {
   if (!sanitizedRoot) {
     throw new Error("sanitizeSvg: no whitelisted root element survived sanitization.");
   }
+  declareNamespaces(sanitizedRoot);
 
   try {
     return serialize(sanitizedRoot);

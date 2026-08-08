@@ -95,7 +95,10 @@ describe("sanitizeSvg — element whitelist", () => {
   it("removes a nested <svg><g><script> but keeps the g/svg structure intact", () => {
     const out = sanitizeSvg('<svg><g><script>alert(1)</script><path d="M0 0"/></g></svg>');
     expect(out).not.toContain("script");
-    expect(out).toMatch(/<svg><g><path d="M0 0"\/><\/g><\/svg>/);
+    // The root carries its xmlns declaration now (see "namespace
+    // declarations" below), so match around it rather than pinning the
+    // whole document byte for byte.
+    expect(out).toMatch(/^<svg\b[^>]*><g><path d="M0 0"\/><\/g><\/svg>$/);
   });
 
   it("removes an unknown element with uppercase tag name (case-sensitive whitelist)", () => {
@@ -227,6 +230,69 @@ describe("sanitizeSvg — round-trips legitimate content", () => {
   it("preserves text content (properly-escaped ampersand round-trips)", () => {
     const out = sanitizeSvg('<svg><text x="0" y="0">Hello &amp; welcome</text></svg>');
     expect(out).toContain("Hello &amp; welcome");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Namespace declarations
+//
+// Safe is not the whole job: the bytes are served as image/svg+xml and drawn
+// in an <img>, so they are parsed as XML, and an <svg> root without
+// xmlns="http://www.w3.org/2000/svg" is not an SVG at all -- it parses
+// cleanly and renders nothing. A real upload (a 621-byte outline icon) was
+// approved, stored at 582 bytes, and came back a broken-image glyph on the
+// detail page for exactly this reason: the whitelist had no entry for xmlns,
+// so the one attribute that makes the document an image was stripped.
+// ---------------------------------------------------------------------------
+
+describe("sanitizeSvg — namespace declarations", () => {
+  it("keeps the root xmlns declaration", () => {
+    const out = sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0"/></svg>');
+    expect(out).toContain('xmlns="http://www.w3.org/2000/svg"');
+  });
+
+  it("adds the xmlns declaration when the input never had one", () => {
+    const out = sanitizeSvg('<svg viewBox="0 0 24 24"><path d="M0 0"/></svg>');
+    expect(out).toContain('xmlns="http://www.w3.org/2000/svg"');
+  });
+
+  it("pins the value: a bogus xmlns is replaced, never passed through", () => {
+    const out = sanitizeSvg('<svg xmlns="http://www.w3.org/1999/xhtml"><path d="M0 0"/></svg>');
+    expect(out).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(out).not.toContain("1999/xhtml");
+  });
+
+  it("declares xmlns:xlink when a surviving xlink: attribute needs it", () => {
+    const out = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+        '<defs><path id="p" d="M0 0"/></defs><use xlink:href="#p"/></svg>'
+    );
+    expect(out).toContain('xlink:href="#p"');
+    expect(out).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+  });
+
+  it("declares xmlns:xlink even when the input used the prefix without declaring it", () => {
+    // Undeclared-prefix input is already malformed, but the parser does not
+    // track namespaces, so without this the sanitizer would hand back a
+    // document no XML parser will accept.
+    const out = sanitizeSvg('<svg><defs><path id="p" d="M0 0"/></defs><use xlink:href="#p"/></svg>');
+    expect(out).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+  });
+
+  it("leaves xmlns:xlink out when nothing uses the prefix", () => {
+    const out = sanitizeSvg('<svg xmlns:xlink="http://www.w3.org/1999/xlink"><path d="M0 0"/></svg>');
+    expect(out).not.toContain("xmlns:xlink");
+  });
+
+  it("declares every prefix it goes on to use", () => {
+    // The renderability contract in one assertion: no xlink: attribute may
+    // survive into a document whose root does not declare that prefix.
+    // (Checked by hand rather than with DOMParser, which workerd has not got.)
+    const out = sanitizeSvg('<svg viewBox="0 0 24 24"><use xlink:href="#p"/></svg>');
+    if (/\sxlink:/.test(out.replace(/^<svg[^>]*>/, ""))) {
+      expect(out).toMatch(/^<svg[^>]*\sxmlns:xlink="http:\/\/www\.w3\.org\/1999\/xlink"/);
+    }
+    expect(out).toMatch(/^<svg[^>]*\sxmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   });
 });
 
